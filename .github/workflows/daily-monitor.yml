@@ -1,0 +1,46 @@
+name: Daily supplier monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:30 JST every day
+    - cron: "30 0 * * *"
+
+permissions:
+  contents: read
+
+env:
+  BUY_MARGIN_THRESHOLD_YEN: "2000"
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Run monitor
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python src/monitor.py
+
+      - name: Upload result CSV
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-results
+          path: output/*.csv
+          retention-days: 30
