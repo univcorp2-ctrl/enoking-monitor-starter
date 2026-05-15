@@ -34,6 +34,7 @@ USER_AGENT = os.getenv(
 # Official marketplace APIs. When credentials are set, rakuten/yahoo suppliers
 # are monitored via API instead of HTML scraping.
 RAKUTEN_APP_ID = os.getenv("RAKUTEN_APP_ID", "")
+RAKUTEN_ACCESS_KEY = os.getenv("RAKUTEN_ACCESS_KEY", "")
 YAHOO_APP_ID = os.getenv("YAHOO_APP_ID", "")
 RAKUTEN_API_URL = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601"
 YAHOO_API_URL = "https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch"
@@ -325,6 +326,7 @@ def fetch_rakuten_api(jan: str) -> tuple[list[ApiItem], str]:
             RAKUTEN_API_URL,
             params={
                 "applicationId": RAKUTEN_APP_ID,
+                "accessKey": RAKUTEN_ACCESS_KEY,
                 "keyword": jan,
                 "hits": 30,
                 "sort": "+itemPrice",
@@ -353,7 +355,7 @@ def fetch_yahoo_api(jan: str) -> tuple[list[ApiItem], str]:
 
 def monitor_via_api(jan: str, source: str) -> ParseResult | None:
     """Return an API-based ParseResult, or None when no API applies."""
-    if source == "rakuten" and RAKUTEN_APP_ID:
+    if source == "rakuten" and RAKUTEN_APP_ID and RAKUTEN_ACCESS_KEY:
         items, error = fetch_rakuten_api(jan)
     elif source == "yahoo" and YAHOO_APP_ID:
         items, error = fetch_yahoo_api(jan)
