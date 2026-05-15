@@ -321,19 +321,18 @@ def select_best_item(items: list[ApiItem]) -> ApiItem | None:
 
 
 def fetch_rakuten_api(jan: str) -> tuple[list[ApiItem], str]:
+    params: dict[str, Any] = {
+        "applicationId": RAKUTEN_APP_ID,
+        "keyword": jan,
+        "hits": 30,
+        "sort": "+itemPrice",
+        "formatVersion": 2,
+    }
+    # accessKey is required for newer (UUID-style) applicationId credentials.
+    if RAKUTEN_ACCESS_KEY:
+        params["accessKey"] = RAKUTEN_ACCESS_KEY
     try:
-        response = requests.get(
-            RAKUTEN_API_URL,
-            params={
-                "applicationId": RAKUTEN_APP_ID,
-                "accessKey": RAKUTEN_ACCESS_KEY,
-                "keyword": jan,
-                "hits": 30,
-                "sort": "+itemPrice",
-                "formatVersion": 2,
-            },
-            timeout=REQUEST_TIMEOUT_SEC,
-        )
+        response = requests.get(RAKUTEN_API_URL, params=params, timeout=REQUEST_TIMEOUT_SEC)
         response.raise_for_status()
         return parse_rakuten_api(response.json()), ""
     except (requests.RequestException, ValueError) as exc:
@@ -355,7 +354,7 @@ def fetch_yahoo_api(jan: str) -> tuple[list[ApiItem], str]:
 
 def monitor_via_api(jan: str, source: str) -> ParseResult | None:
     """Return an API-based ParseResult, or None when no API applies."""
-    if source == "rakuten" and RAKUTEN_APP_ID and RAKUTEN_ACCESS_KEY:
+    if source == "rakuten" and RAKUTEN_APP_ID:
         items, error = fetch_rakuten_api(jan)
     elif source == "yahoo" and YAHOO_APP_ID:
         items, error = fetch_yahoo_api(jan)
