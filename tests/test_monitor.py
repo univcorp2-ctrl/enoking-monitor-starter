@@ -3,7 +3,7 @@ from src.monitor import (
     parse_page,
     parse_rakuten_api,
     parse_yahoo_api,
-    select_best_item,
+    rank_items,
 )
 
 
@@ -67,8 +67,8 @@ def test_parse_rakuten_api_flat_format():
     items = parse_rakuten_api(payload)
     assert len(items) == 2
     assert items[0].shipping_included is True
-    best = select_best_item(items)
-    # The used cheaper item is filtered out; the new in-stock item wins.
+    best = rank_items(items)[0]
+    # The used cheaper item is filtered out; the new in-stock item ranks first.
     assert best.price_yen == 38000
     assert best.shop == "shopA"
 
@@ -98,12 +98,24 @@ def test_parse_yahoo_api_filters_used_and_picks_cheapest():
     }
     items = parse_yahoo_api(payload)
     assert len(items) == 1  # used item dropped
-    best = select_best_item(items)
+    best = rank_items(items)[0]
     assert best.price_yen == 39000
     assert best.shipping_included is True
+    assert best.jan == ""
 
 
-def test_select_best_item_prefers_in_stock():
+def test_parse_yahoo_api_keeps_jan_code():
+    payload = {
+        "hits": [
+            {"name": "Switch", "price": 39000, "url": "u", "seller": {"name": "s"},
+             "inStock": True, "condition": "new", "janCode": "4902370548501"},
+        ]
+    }
+    items = parse_yahoo_api(payload)
+    assert items[0].jan == "4902370548501"
+
+
+def test_rank_items_prefers_in_stock_over_cheaper_out_of_stock():
     payload = {
         "Items": [
             {"itemName": "A", "itemPrice": 30000, "itemUrl": "u1", "shopName": "s1",
@@ -112,5 +124,5 @@ def test_select_best_item_prefers_in_stock():
              "availability": 1, "postageFlag": 0},
         ]
     }
-    best = select_best_item(parse_rakuten_api(payload))
-    assert best.price_yen == 35000
+    ranked = rank_items(parse_rakuten_api(payload))
+    assert ranked[0].price_yen == 35000  # in-stock outranks cheaper sold-out

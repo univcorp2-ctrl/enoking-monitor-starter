@@ -102,6 +102,8 @@ class ApiItem:
     url: str
     shop: str
     name: str
+    jan: str = ""
+    caption: str = ""
 
 
 def parse_bool(value: str) -> bool:
@@ -281,6 +283,8 @@ def parse_rakuten_api(payload: dict[str, Any]) -> list[ApiItem]:
             url=item.get("itemUrl", ""),
             shop=item.get("shopName", ""),
             name=item.get("itemName", ""),
+            jan="",  # Ichiba search has no JAN field; confirmed on the listing page.
+            caption=item.get("itemCaption", ""),
         ))
     return items
 
@@ -308,16 +312,46 @@ def parse_yahoo_api(payload: dict[str, Any]) -> list[ApiItem]:
             url=hit.get("url", ""),
             shop=(hit.get("seller") or {}).get("name", ""),
             name=hit.get("name", ""),
+            jan=str(hit.get("janCode") or ""),
+            caption=hit.get("description", "") or "",
         ))
     return items
 
 
-def select_best_item(items: list[ApiItem]) -> ApiItem | None:
-    pool = [item for item in items if not looks_used(item.name)] or items
-    candidates = [item for item in pool if item.in_stock] or pool
-    if not candidates:
-        return None
-    return min(candidates, key=lambda item: item.price_yen)
+def rank_items(items: list[ApiItem]) -> list[ApiItem]:
+    """New items first, then API-in-stock first, then cheapest."""
+    fresh = [item for item in items if not looks_used(item.name)] or items
+    return sorted(fresh, key=lambda item: (not item.in_stock, item.price_yen))
+
+
+def verify_on_page(item: ApiItem, jan: str) -> tuple[str, bool | None, str]:
+    """Fetch the listing page and confirm JAN + stock wording.
+
+    Returns (jan_status, stock_confirmed, note) where jan_status is
+    "match" / "mismatch" / "unknown" and stock_confirmed is True/False/None.
+    """
+    if item.jan:
+        jan_status = "match" if item.jan == jan else "mismatch"
+        if jan_status == "mismatch":
+            return jan_status, None, f"JAN不一致(API:{item.jan})"
+    else:
+        jan_status = "unknown"
+
+    status_code, html, error = fetch(item.url)
+    if error:
+        return jan_status, None, f"ページ検証不可:{error}"
+    text = normalize_text(html)
+
+    if jan_status != "match":
+        jan_status = "match" if jan in html or jan in text else "unknown"
+
+    if any(signal in text for signal in JS_REQUIRED_SIGNALS):
+        return jan_status, None, "在庫:JSページのため未確認"
+
+    stock = detect_stock(text)
+    signals = stock_signal_summary(text)
+    label = {True: "在庫あり", False: "品切れ", None: "在庫表記なし"}[stock]
+    return jan_status, stock, f"在庫:{label}" + (f"({signals})" if signals else "")
 
 
 def fetch_rakuten_api(jan: str) -> tuple[list[ApiItem], str]:
@@ -352,8 +386,15 @@ def fetch_yahoo_api(jan: str) -> tuple[list[ApiItem], str]:
         return [], f"YAHOO_API_ERROR: {exc.__class__.__name__}: {exc}"
 
 
+VERIFY_LIMIT = 6
+
+
 def monitor_via_api(jan: str, source: str) -> ParseResult | None:
-    """Return an API-based ParseResult, or None when no API applies."""
+    """Return an API-based ParseResult, or None when no API applies.
+
+    The cheapest candidates are verified against their actual listing page:
+    a buy-ready result requires a JAN match and "在庫あり" wording on-site.
+    """
     if source == "rakuten" and RAKUTEN_APP_ID:
         items, error = fetch_rakuten_api(jan)
     elif source == "yahoo" and YAHOO_APP_ID:
@@ -362,16 +403,42 @@ def monitor_via_api(jan: str, source: str) -> ParseResult | None:
         return None
     if error:
         return ParseResult(None, None, "", error)
-    best = select_best_item(items)
-    if best is None:
-        return ParseResult(None, None, f"api:{source}|hits=0", f"API_NO_MATCH ({source})")
+
+    ranked = rank_items(items)
+    if not ranked:
+        return ParseResult(None, None, f"api:{source}|hits=0", f"API該当なし ({source})")
+
+    fallback: tuple[ApiItem, str, bool | None, str] | None = None
+    for item in ranked[:VERIFY_LIMIT]:
+        jan_status, stock, note = verify_on_page(item, jan)
+        if jan_status == "mismatch":
+            continue
+        if jan_status == "match" and stock is True:
+            return ParseResult(
+                parsed_price_yen=item.price_yen,
+                in_stock=True,
+                raw_signals=f"api:{source}|hits={len(items)}|verified",
+                notes=f"店舗:{item.shop} / JAN一致 / {note}",
+                shipping_included=item.shipping_included,
+                resolved_url=item.url or None,
+            )
+        if fallback is None:
+            fallback = (item, jan_status, stock, note)
+
+    if fallback is not None:
+        item, jan_status, stock, note = fallback
+        jan_text = "JAN一致" if jan_status == "match" else "JAN未確認"
+        return ParseResult(
+            parsed_price_yen=item.price_yen,
+            in_stock=None,
+            raw_signals=f"api:{source}|hits={len(items)}|unverified",
+            notes=f"要手動確認 / 店舗:{item.shop} / {jan_text} / {note}",
+            shipping_included=item.shipping_included,
+            resolved_url=item.url or None,
+        )
     return ParseResult(
-        parsed_price_yen=best.price_yen,
-        in_stock=best.in_stock,
-        raw_signals=f"api:{source}|hits={len(items)}",
-        notes=f"API best shop: {best.shop}",
-        shipping_included=best.shipping_included,
-        resolved_url=best.url or None,
+        None, None, f"api:{source}|hits={len(items)}",
+        f"API候補は全て品切れ/JAN不一致 ({source})",
     )
 
 
