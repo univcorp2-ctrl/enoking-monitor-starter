@@ -34,9 +34,10 @@ jobs:
 
       - name: Run monitor
         env:
-          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+          # Secrets override these defaults when registered.
+          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID || '1060459429146863364' }}
           RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
-          YAHOO_APP_ID: ${{ secrets.YAHOO_APP_ID }}
+          YAHOO_APP_ID: ${{ secrets.YAHOO_APP_ID || 'dj00aiZpPWhhNVV4Y3NzdHlrViZzPWNvbnN1bWVyc2VjcmV0Jng9YjQ-' }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python src/monitor.py

@@ -37,7 +37,8 @@ python src/monitor.py
 `.github/workflows/daily-monitor.yml` により、毎日 09:30 JST に監視を実行します。
 
 - 実行結果CSVはGitHub ActionsのArtifactsに保存されます。
-- `RAKUTEN_APP_ID` / `RAKUTEN_ACCESS_KEY` / `YAHOO_APP_ID` をRepository Secretsに設定すると、楽天・Yahoo!ショッピングをAPIで監視します。
+- 楽天・Yahoo!ショッピングのAPI IDはワークフローに既定値が埋め込まれているため、追加設定なしでAPI監視が動きます。
+- 別のIDに切り替えたい場合は `RAKUTEN_APP_ID` / `RAKUTEN_ACCESS_KEY` / `YAHOO_APP_ID` をRepository Secretsに登録すると既定値を上書きします。
 - `SLACK_WEBHOOK_URL` または `DISCORD_WEBHOOK_URL` をRepository Secretsに設定すると、買い候補が出た時だけ通知します。
 - Secretsは `Settings → Secrets and variables → Actions → New repository secret` から登録します。
 - 手動実行は GitHub Actions の `Daily supplier monitor` から `Run workflow` を押します。
