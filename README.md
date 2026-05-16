@@ -37,8 +37,34 @@ python src/monitor.py
 `.github/workflows/daily-monitor.yml` により、毎日 09:30 JST に監視を実行します。
 
 - 実行結果CSVはGitHub ActionsのArtifactsに保存されます。
+- 楽天・Yahoo!ショッピングのAPI IDはワークフローに既定値が埋め込まれているため、追加設定なしでAPI監視が動きます。
+- 別のIDに切り替えたい場合は `RAKUTEN_APP_ID` / `RAKUTEN_ACCESS_KEY` / `YAHOO_APP_ID` をRepository Secretsに登録すると既定値を上書きします。
 - `SLACK_WEBHOOK_URL` または `DISCORD_WEBHOOK_URL` をRepository Secretsに設定すると、買い候補が出た時だけ通知します。
+- Secretsは `Settings → Secrets and variables → Actions → New repository secret` から登録します。
 - 手動実行は GitHub Actions の `Daily supplier monitor` から `Run workflow` を押します。
+
+## マーケットプレイスAPI監視
+
+`rakuten` / `yahoo` パーサーヒントの監視先は、APIキーが設定されていれば公式APIで価格・在庫を取得します（未設定時やAPIエラー時はHTMLスクレイピングにフォールバック）。
+
+| 環境変数 / Secret | API | 取得元 |
+|---|---|---|
+| `RAKUTEN_APP_ID` | 楽天市場 商品検索API | Rakuten Developers の Application ID |
+| `RAKUTEN_ACCESS_KEY` | 楽天市場 商品検索API | Rakuten Developers の Access Key（2026年仕様で必須） |
+| `YAHOO_APP_ID` | Yahoo!ショッピング 商品検索API V3 | Yahoo!デベロッパー の Client ID |
+
+楽天APIは `applicationId` と `accessKey` の両方が必須です（両方が揃っていない場合はスクレイピングにフォールバック）。
+
+APIはJANコードで横断検索し、新品・在庫あり・最安の出品を採用します（中古・新古品は商品名から除外）。
+
+ローカルで使う場合は環境変数を設定してから実行します。
+
+```bash
+export RAKUTEN_APP_ID="..."
+export RAKUTEN_ACCESS_KEY="..."
+export YAHOO_APP_ID="..."
+python src/monitor.py
+```
 
 ## 注意
 
