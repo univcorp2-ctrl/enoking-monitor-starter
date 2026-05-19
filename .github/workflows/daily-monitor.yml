@@ -1,13 +1,19 @@
-name: Daily supplier monitor
+name: Supplier monitor
 
 on:
   workflow_dispatch:
   schedule:
-    # 09:30 JST every day
-    - cron: "30 0 * * *"
+    # Every 30 minutes (near real-time). Adjust the interval to balance
+    # detection speed against GitHub Actions minutes.
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
+
+# Avoid overlapping runs when a check takes longer than the interval.
+concurrency:
+  group: supplier-monitor
+  cancel-in-progress: false
 
 env:
   BUY_MARGIN_THRESHOLD_YEN: "2000"
@@ -32,6 +38,16 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+      # Carries the notification de-dup state across runs so the same buy
+      # candidate is not re-announced every interval.
+      - name: Restore notify state
+        uses: actions/cache@v4
+        with:
+          path: output/notify_state.json
+          key: notify-state-${{ github.run_id }}
+          restore-keys: |
+            notify-state-
+
       - name: Run monitor
         env:
           # Secrets override these defaults when registered.
@@ -45,6 +61,6 @@ jobs:
       - name: Upload result CSV
         uses: actions/upload-artifact@v4
         with:
-          name: monitor-results
+          name: monitor-results-${{ github.run_id }}
           path: output/*.csv
-          retention-days: 30
+          retention-days: 7

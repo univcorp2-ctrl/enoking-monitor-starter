@@ -1,10 +1,30 @@
 from src.monitor import (
     Supplier,
+    fresh_candidates,
     parse_page,
     parse_rakuten_api,
     parse_yahoo_api,
     rank_items,
 )
+
+
+def make_candidate(jan: str, supplier: str, price: int) -> dict:
+    return {"jan": jan, "supplier": supplier, "effective_price_yen": price}
+
+
+def test_fresh_candidates_suppresses_repeat_alerts():
+    cand = [make_candidate("4902370548501", "shopA", 40000)]
+    # First run: nothing notified yet -> alert.
+    assert fresh_candidates(cand, {}) == cand
+    # Same offer still available -> suppressed.
+    state = {"notified": {"4902370548501|shopA": 40000}}
+    assert fresh_candidates(cand, state) == []
+    # Price dropped further -> alert again.
+    cheaper = [make_candidate("4902370548501", "shopA", 38000)]
+    assert fresh_candidates(cheaper, state) == cheaper
+    # A different supplier appearing -> alert.
+    other = [make_candidate("4902370548501", "shopB", 41000)]
+    assert fresh_candidates(other, state) == other
 
 
 def make_supplier(parser_hint: str) -> Supplier:

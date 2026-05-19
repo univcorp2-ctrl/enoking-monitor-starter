@@ -1,9 +1,6 @@
 jan,supplier,url,expected_price_yen,shipping_included,condition_required,enabled,parser_hint,notes
 4902370552683,My Nintendo Store,https://store-jp.nintendo.com/item/hardware-accessory/VM_BEE_S_KB6AA/,69980,true,new,true,nintendo_store,公式。JS/待機列がありrequestsのみでは取得不可の場合あり
-4902370552683,Yahoo digitalisland,https://store.shopping.yahoo.co.jp/digitalisland/4902370552683.html,95980,true,new,true,yahoo,現時点では高値監視。送料無料表記を確認対象
-4902370552683,Rakuten uriurishop,https://item.rakuten.co.jp/uriurishop/4902370552683/,93596,true,new,true,rakuten,現時点では高値監視
-4902370548501,Yodobashi,https://www.yodobashi.com/product/100000001006501447/,37980,true,new,true,yodobashi,旧価格37,980円在庫を監視
-4902370548501,Nojima Online,https://online.nojima.co.jp/commodity/1/4902370548501/,37980,true,new,true,nojima,購入条件あり/完売御礼の変化を監視
+4902370548501,Yodobashi,https://www.yodobashi.com/product/100000001006501447/,37980,true,new,true,yodobashi,旧価格37980円在庫を監視。WAFで403になる場合あり
+4902370548501,Nojima Online,https://online.nojima.co.jp/commodity/1/4902370548501/,37980,true,new,true,nojima,購入条件あり/完売御礼の変化を監視。WAFで403になる場合あり
 4902370548501,TSUTAYA Store Stock,https://store-tsutaya.tsite.jp/search/result/stock?itemType=game&productKey=4902370548501&saleType=sell&workId=30040491,,true,new,true,tsutaya,店舗在庫検索。JS/地域入力が必要なためブラウザ化候補
-4902370548501,Yahoo digitalisland,https://store.shopping.yahoo.co.jp/digitalisland/4902370548501.html,46498,true,new,true,yahoo,在庫なし/高値寄りの変化を監視
-4902370548501,AEON Style Online,https://aeonretail.com/product/0/P-4902370548501/,37928,true,new,true,aeon,お一人さま1点限り/購入可否を監視
+4902370548501,AEON Style Online,https://aeonretail.com/product/0/P-4902370548501/,37928,true,new,true,aeon,お一人さま1点限り/購入可否を監視。WAFで403になる場合あり

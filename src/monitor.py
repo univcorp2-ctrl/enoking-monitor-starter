@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
 OUTPUT_DIR = ROOT / "output"
+NOTIFY_STATE_PATH = OUTPUT_DIR / "notify_state.json"
 JST = timezone(timedelta(hours=9), "JST")
 BUY_MARGIN_THRESHOLD_YEN = int(os.getenv("BUY_MARGIN_THRESHOLD_YEN", "2000"))
 REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "20"))
@@ -92,6 +94,7 @@ class ParseResult:
     notes: str
     shipping_included: bool | None = None
     resolved_url: str | None = None
+    shop: str = ""
 
 
 @dataclass
@@ -354,6 +357,23 @@ def verify_on_page(item: ApiItem, jan: str) -> tuple[str, bool | None, str]:
     return jan_status, stock, f"在庫:{label}" + (f"({signals})" if signals else "")
 
 
+RETRYABLE_STATUS = {403, 429, 500, 502, 503}
+
+
+def api_get(url: str, params: dict[str, Any]) -> requests.Response:
+    """GET with a short backoff retry on transient rate-limit responses."""
+    response = None
+    for attempt in range(3):
+        response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT_SEC)
+        if response.status_code in RETRYABLE_STATUS and attempt < 2:
+            time.sleep(2 * (attempt + 1))
+            continue
+        break
+    assert response is not None
+    response.raise_for_status()
+    return response
+
+
 def fetch_rakuten_api(jan: str) -> tuple[list[ApiItem], str]:
     params: dict[str, Any] = {
         "applicationId": RAKUTEN_APP_ID,
@@ -366,80 +386,75 @@ def fetch_rakuten_api(jan: str) -> tuple[list[ApiItem], str]:
     if RAKUTEN_ACCESS_KEY:
         params["accessKey"] = RAKUTEN_ACCESS_KEY
     try:
-        response = requests.get(RAKUTEN_API_URL, params=params, timeout=REQUEST_TIMEOUT_SEC)
-        response.raise_for_status()
-        return parse_rakuten_api(response.json()), ""
+        return parse_rakuten_api(api_get(RAKUTEN_API_URL, params).json()), ""
     except (requests.RequestException, ValueError) as exc:
         return [], f"RAKUTEN_API_ERROR: {exc.__class__.__name__}: {exc}"
 
 
 def fetch_yahoo_api(jan: str) -> tuple[list[ApiItem], str]:
+    params = {"appid": YAHOO_APP_ID, "jan_code": jan, "results": 30}
     try:
-        response = requests.get(
-            YAHOO_API_URL,
-            params={"appid": YAHOO_APP_ID, "jan_code": jan, "results": 30},
-            timeout=REQUEST_TIMEOUT_SEC,
-        )
-        response.raise_for_status()
-        return parse_yahoo_api(response.json()), ""
+        return parse_yahoo_api(api_get(YAHOO_API_URL, params).json()), ""
     except (requests.RequestException, ValueError) as exc:
         return [], f"YAHOO_API_ERROR: {exc.__class__.__name__}: {exc}"
 
 
-VERIFY_LIMIT = 6
+VERIFY_LIMIT = 8
+TOP_OFFERS = 3
+
+API_SOURCES = {"rakuten": "楽天市場", "yahoo": "Yahoo!ショッピング"}
 
 
-def monitor_via_api(jan: str, source: str) -> ParseResult | None:
-    """Return an API-based ParseResult, or None when no API applies.
+def scan_marketplace(jan: str, source: str, limit: int = TOP_OFFERS) -> list[ParseResult]:
+    """Search a whole marketplace for a JAN and return the cheapest offers.
 
-    The cheapest candidates are verified against their actual listing page:
-    a buy-ready result requires a JAN match and "在庫あり" wording on-site.
+    Rakuten/Yahoo cover thousands of shops each, so one scan diversifies
+    suppliers automatically. Each candidate is confirmed on its listing
+    page: an in-stock result requires a JAN match and positive stock
+    wording. Returns an empty list when the API is not configured.
     """
-    if source == "rakuten" and RAKUTEN_APP_ID:
+    if source == "rakuten":
+        if not RAKUTEN_APP_ID:
+            return []
         items, error = fetch_rakuten_api(jan)
-    elif source == "yahoo" and YAHOO_APP_ID:
+    elif source == "yahoo":
+        if not YAHOO_APP_ID:
+            return []
         items, error = fetch_yahoo_api(jan)
     else:
-        return None
+        return []
     if error:
-        return ParseResult(None, None, "", error)
+        return [ParseResult(None, None, f"api:{source}", error)]
 
     ranked = rank_items(items)
-    if not ranked:
-        return ParseResult(None, None, f"api:{source}|hits=0", f"API該当なし ({source})")
-
-    fallback: tuple[ApiItem, str, bool | None, str] | None = None
+    verified: list[ParseResult] = []
+    fallback: list[ParseResult] = []
     for item in ranked[:VERIFY_LIMIT]:
         jan_status, stock, note = verify_on_page(item, jan)
         if jan_status == "mismatch":
             continue
-        if jan_status == "match" and stock is True:
-            return ParseResult(
-                parsed_price_yen=item.price_yen,
-                in_stock=True,
-                raw_signals=f"api:{source}|hits={len(items)}|verified",
-                notes=f"店舗:{item.shop} / JAN一致 / {note}",
-                shipping_included=item.shipping_included,
-                resolved_url=item.url or None,
-            )
-        if fallback is None:
-            fallback = (item, jan_status, stock, note)
-
-    if fallback is not None:
-        item, jan_status, stock, note = fallback
+        confirmed = jan_status == "match" and stock is True
         jan_text = "JAN一致" if jan_status == "match" else "JAN未確認"
-        return ParseResult(
+        result = ParseResult(
             parsed_price_yen=item.price_yen,
-            in_stock=None,
-            raw_signals=f"api:{source}|hits={len(items)}|unverified",
-            notes=f"要手動確認 / 店舗:{item.shop} / {jan_text} / {note}",
+            in_stock=True if confirmed else None,
+            raw_signals=f"api:{source}|hits={len(items)}|{'verified' if confirmed else 'unverified'}",
+            notes=f"{jan_text} / {note}" if confirmed else f"要手動確認 / {jan_text} / {note}",
             shipping_included=item.shipping_included,
             resolved_url=item.url or None,
+            shop=item.shop,
         )
-    return ParseResult(
+        (verified if confirmed else fallback).append(result)
+        if len(verified) >= limit:
+            break
+
+    results = verified[:limit] or fallback[:limit]
+    if results:
+        return results
+    return [ParseResult(
         None, None, f"api:{source}|hits={len(items)}",
-        f"API候補は全て品切れ/JAN不一致 ({source})",
-    )
+        f"在庫ありの候補なし ({source})",
+    )]
 
 
 def fetch(url: str) -> tuple[int | None, str, str]:
@@ -482,6 +497,51 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
     }
 
 
+def candidate_key(row: dict[str, Any]) -> str:
+    return f"{row['jan']}|{row['supplier']}"
+
+
+def load_notify_state() -> dict[str, Any]:
+    if NOTIFY_STATE_PATH.exists():
+        try:
+            return json.loads(NOTIFY_STATE_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def save_notify_state(candidates: list[dict[str, Any]], checked_at: str) -> None:
+    state = {
+        "updated_at": checked_at,
+        "notified": {candidate_key(row): row["effective_price_yen"] for row in candidates},
+    }
+    try:
+        NOTIFY_STATE_PATH.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        print(f"notify state save failed: {exc}", file=sys.stderr)
+
+
+def fresh_candidates(
+    candidates: list[dict[str, Any]], state: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Candidates newly available since the last run, or now cheaper.
+
+    Suppresses repeat alerts while the same offer stays available so a
+    frequent cron does not spam the same buy candidate.
+    """
+    notified = state.get("notified", {})
+    fresh: list[dict[str, Any]] = []
+    for row in candidates:
+        key = candidate_key(row)
+        price = row["effective_price_yen"]
+        previous = notified.get(key)
+        if previous is None or (price is not None and price < previous):
+            fresh.append(row)
+    return fresh
+
+
 def notify(candidates: list[dict[str, Any]]) -> None:
     if not candidates:
         return
@@ -506,6 +566,53 @@ def notify(candidates: list[dict[str, Any]]) -> None:
         print(f"notification failed: {exc}", file=sys.stderr)
 
 
+def build_row(
+    checked_at: str,
+    product: Product,
+    supplier: Supplier,
+    result: ParseResult,
+    status_code: int | None,
+    fetch_ok: bool,
+) -> dict[str, Any]:
+    eval_result = evaluate(product, supplier, result)
+    return {
+        "checked_at_jst": checked_at,
+        "jan": supplier.jan,
+        "product_name": product.product_name,
+        "supplier": supplier.supplier,
+        "url": result.resolved_url or supplier.url,
+        "http_status": status_code,
+        "fetch_ok": fetch_ok,
+        "parser_hint": supplier.parser_hint,
+        "parsed_price_yen": result.parsed_price_yen,
+        "expected_price_yen": supplier.expected_price_yen,
+        "effective_price_yen": eval_result["effective_price_yen"],
+        "enoking_buy_price_yen": product.enoking_buy_price_yen,
+        "gross_profit_yen": eval_result["gross_profit_yen"],
+        "in_stock": result.in_stock,
+        "shipping_included": eval_result["shipping_included"],
+        "condition_required": supplier.condition_required,
+        "is_buy_candidate": eval_result["is_buy_candidate"],
+        "raw_signals": result.raw_signals,
+        "notes": "; ".join(part for part in [supplier.notes, result.notes] if part),
+    }
+
+
+def api_supplier(jan: str, label: str, result: ParseResult, source: str) -> Supplier:
+    name = f"{label} / {result.shop}" if result.shop else label
+    return Supplier(
+        jan=jan,
+        supplier=name,
+        url=result.resolved_url or "",
+        expected_price_yen=None,
+        shipping_included=False,
+        condition_required="new",
+        enabled=True,
+        parser_hint=source,
+        notes="",
+    )
+
+
 def main() -> int:
     products = load_products()
     suppliers = [s for s in load_suppliers() if s.enabled]
@@ -513,48 +620,26 @@ def main() -> int:
     checked_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
 
     rows: list[dict[str, Any]] = []
+
+    # Marketplace API scans: every shop on Rakuten / Yahoo, top offers per JAN.
+    for jan, product in products.items():
+        for source, label in API_SOURCES.items():
+            for result in scan_marketplace(jan, source):
+                supplier = api_supplier(jan, label, result, source)
+                rows.append(build_row(checked_at, product, supplier, result, None, True))
+
+    # Direct retailer pages from config (HTML scraping).
     for supplier in suppliers:
         product = products.get(supplier.jan)
         if not product:
             print(f"Skipping unknown JAN: {supplier.jan}", file=sys.stderr)
             continue
-
-        status_code: int | None = None
-        api_result = monitor_via_api(supplier.jan, supplier.parser_hint.lower())
-        if api_result is not None and "_API_ERROR" not in api_result.notes:
-            parsed = api_result
+        status_code, html, fetch_error = fetch(supplier.url)
+        if fetch_error:
+            parsed = ParseResult(None, None, "", fetch_error)
         else:
-            if api_result is not None:
-                print(f"API failed, falling back to scrape: {api_result.notes}", file=sys.stderr)
-            status_code, html, fetch_error = fetch(supplier.url)
-            if fetch_error:
-                parsed = ParseResult(None, None, "", fetch_error)
-            else:
-                parsed = parse_page(html, supplier)
-
-        eval_result = evaluate(product, supplier, parsed)
-        row: dict[str, Any] = {
-            "checked_at_jst": checked_at,
-            "jan": supplier.jan,
-            "product_name": product.product_name,
-            "supplier": supplier.supplier,
-            "url": parsed.resolved_url or supplier.url,
-            "http_status": status_code,
-            "fetch_ok": not bool(fetch_error),
-            "parser_hint": supplier.parser_hint,
-            "parsed_price_yen": parsed.parsed_price_yen,
-            "expected_price_yen": supplier.expected_price_yen,
-            "effective_price_yen": eval_result["effective_price_yen"],
-            "enoking_buy_price_yen": product.enoking_buy_price_yen,
-            "gross_profit_yen": eval_result["gross_profit_yen"],
-            "in_stock": parsed.in_stock,
-            "shipping_included": eval_result["shipping_included"],
-            "condition_required": supplier.condition_required,
-            "is_buy_candidate": eval_result["is_buy_candidate"],
-            "raw_signals": parsed.raw_signals,
-            "notes": "; ".join(part for part in [supplier.notes, parsed.notes] if part),
-        }
-        rows.append(row)
+            parsed = parse_page(html, supplier)
+        rows.append(build_row(checked_at, product, supplier, parsed, status_code, not fetch_error))
 
     out_path = OUTPUT_DIR / f"monitor_result_{datetime.now(JST).strftime('%Y%m%d_%H%M%S')}.csv"
     fieldnames = list(rows[0].keys()) if rows else []
@@ -564,12 +649,16 @@ def main() -> int:
         writer.writerows(rows)
 
     candidates = [row for row in rows if row["is_buy_candidate"]]
-    notify(candidates)
+    state = load_notify_state()
+    to_notify = fresh_candidates(candidates, state)
+    notify(to_notify)
+    save_notify_state(candidates, checked_at)
 
     print(json.dumps({
         "output": str(out_path),
         "checked": len(rows),
         "buy_candidates": len(candidates),
+        "newly_notified": len(to_notify),
     }, ensure_ascii=False, indent=2))
     return 0
 
