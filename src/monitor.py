@@ -359,6 +359,10 @@ def verify_on_page(item: ApiItem, jan: str) -> tuple[str, bool | None, str]:
 
 RETRYABLE_STATUS = {403, 429, 500, 502, 503}
 
+# Parser hints that should be fetched via CloakBrowser (WAF or JS pages).
+BROWSER_HINTS = {"nintendo_store", "nojima", "yodobashi", "aeon", "tsutaya"}
+BROWSER_ENABLED = os.getenv("ENABLE_BROWSER", "1") != "0"
+
 
 def api_get(url: str, params: dict[str, Any]) -> requests.Response:
     """GET with a short backoff retry on transient rate-limit responses."""
@@ -629,12 +633,28 @@ def main() -> int:
                 rows.append(build_row(checked_at, product, supplier, result, None, True))
 
     # Direct retailer pages from config (HTML scraping).
+    browser_urls = [
+        s.url for s in suppliers if s.parser_hint.lower() in BROWSER_HINTS
+    ]
+    browser_results: dict[str, tuple[int | None, str, str]] = {}
+    if BROWSER_ENABLED and browser_urls:
+        try:
+            import browser as browser_mod  # src/ is on sys.path when run as a script
+            browser_results = browser_mod.fetch_many(browser_urls)
+        except ImportError:
+            print("cloakbrowser not installed; falling back to requests", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001 - keep monitor running on browser errors
+            print(f"browser fetch failed: {exc.__class__.__name__}: {exc}", file=sys.stderr)
+
     for supplier in suppliers:
         product = products.get(supplier.jan)
         if not product:
             print(f"Skipping unknown JAN: {supplier.jan}", file=sys.stderr)
             continue
-        status_code, html, fetch_error = fetch(supplier.url)
+        if supplier.url in browser_results:
+            status_code, html, fetch_error = browser_results[supplier.url]
+        else:
+            status_code, html, fetch_error = fetch(supplier.url)
         if fetch_error:
             parsed = ParseResult(None, None, "", fetch_error)
         else:
