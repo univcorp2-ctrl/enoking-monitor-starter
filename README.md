@@ -32,13 +32,41 @@ python src/monitor.py
 
 結果は `output/monitor_result_YYYYMMDD_HHMMSS.csv` に出力されます。
 
-## GitHub Actionsで毎日監視
+## GitHub Actionsで監視（高頻度）
 
-`.github/workflows/daily-monitor.yml` により、毎日 09:30 JST に監視を実行します。
+`.github/workflows/daily-monitor.yml` により、**30分ごと**に監視を実行します（実質ニアリアルタイム）。間隔は `cron` で調整できます。
 
 - 実行結果CSVはGitHub ActionsのArtifactsに保存されます。
-- `SLACK_WEBHOOK_URL` または `DISCORD_WEBHOOK_URL` をRepository Secretsに設定すると、買い候補が出た時だけ通知します。
-- 手動実行は GitHub Actions の `Daily supplier monitor` から `Run workflow` を押します。
+- 楽天・Yahoo!ショッピングのAPI IDはワークフローに既定値が埋め込まれているため、追加設定なしでAPI監視が動きます。
+- 別のIDに切り替えたい場合は `RAKUTEN_APP_ID` / `RAKUTEN_ACCESS_KEY` / `YAHOO_APP_ID` をRepository Secretsに登録すると既定値を上書きします。
+- `SLACK_WEBHOOK_URL` または `DISCORD_WEBHOOK_URL` をRepository Secretsに設定すると、買い候補が出た時だけ通知します。同じ出品の連投は `actions/cache` に保存した状態で抑制し、新規出現・値下がり時のみ通知します。
+- Secretsは `Settings → Secrets and variables → Actions → New repository secret` から登録します。
+- 手動実行は GitHub Actions の `Supplier monitor` から `Run workflow` を押します。
+- 注意: プライベートリポジトリではActions無料枠を消費します。頻度はコストと相談して調整してください。
+
+## 監視の仕組み
+
+監視は2系統です。
+
+1. **マーケットプレイスAPIスキャン（安定・推奨）** — 楽天市場・Yahoo!ショッピングの商品検索APIでJANを横断検索し、各マーケットプレイス全店（数千店舗）から最安の候補を取得します。新品・在庫あり・送料込みで突合し、上位の出品を採用します。中古・新古品は除外します。
+2. **直販ECスクレイピング（補助）** — My Nintendo Store等、APIの無いサイトをHTMLから一次判定します。ヨドバシ・ノジマ・イオン等はWAFにより `requests` ではブロック（403/503）されることが多く、その場合は取得失敗として記録します。本格対応はPlaywright（ブラウザ）化が必要です。
+
+| 環境変数 / Secret | API | 取得元 |
+|---|---|---|
+| `RAKUTEN_APP_ID` | 楽天市場 商品検索API | Rakuten Developers の Application ID |
+| `RAKUTEN_ACCESS_KEY` | 楽天市場 商品検索API | Rakuten Developers の Access Key（UUID形式IDのみ必須） |
+| `YAHOO_APP_ID` | Yahoo!ショッピング 商品検索API V3 | Yahoo!デベロッパー の Client ID |
+
+APIの最安候補は、実際の出品ページを取得してJANコード一致と在庫表記を確認してから採用します。確認できないものは「要手動確認」として買い候補から除外します。
+
+ローカルで使う場合は環境変数を設定してから実行します。
+
+```bash
+export RAKUTEN_APP_ID="..."
+export RAKUTEN_ACCESS_KEY="..."
+export YAHOO_APP_ID="..."
+python src/monitor.py
+```
 
 ## 注意
 

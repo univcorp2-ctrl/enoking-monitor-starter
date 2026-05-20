@@ -1,4 +1,30 @@
-from src.monitor import Supplier, parse_page
+from src.monitor import (
+    Supplier,
+    fresh_candidates,
+    parse_page,
+    parse_rakuten_api,
+    parse_yahoo_api,
+    rank_items,
+)
+
+
+def make_candidate(jan: str, supplier: str, price: int) -> dict:
+    return {"jan": jan, "supplier": supplier, "effective_price_yen": price}
+
+
+def test_fresh_candidates_suppresses_repeat_alerts():
+    cand = [make_candidate("4902370548501", "shopA", 40000)]
+    # First run: nothing notified yet -> alert.
+    assert fresh_candidates(cand, {}) == cand
+    # Same offer still available -> suppressed.
+    state = {"notified": {"4902370548501|shopA": 40000}}
+    assert fresh_candidates(cand, state) == []
+    # Price dropped further -> alert again.
+    cheaper = [make_candidate("4902370548501", "shopA", 38000)]
+    assert fresh_candidates(cheaper, state) == cheaper
+    # A different supplier appearing -> alert.
+    other = [make_candidate("4902370548501", "shopB", 41000)]
+    assert fresh_candidates(other, state) == other
 
 
 def make_supplier(parser_hint: str) -> Supplier:
@@ -35,3 +61,88 @@ def test_js_required_detection():
     assert result.parsed_price_yen is None
     assert result.in_stock is None
     assert "NEEDS_BROWSER" in result.notes
+
+
+def test_parse_rakuten_api_flat_format():
+    payload = {
+        "Items": [
+            {
+                "itemName": "Nintendo Switch 有機EL ネオン 新品",
+                "itemPrice": 38000,
+                "itemUrl": "https://item.rakuten.co.jp/shopa/x/",
+                "shopName": "shopA",
+                "availability": 1,
+                "postageFlag": 0,
+            },
+            {
+                "itemName": "Nintendo Switch 有機EL 中古",
+                "itemPrice": 30000,
+                "itemUrl": "https://item.rakuten.co.jp/shopb/y/",
+                "shopName": "shopB",
+                "availability": 1,
+                "postageFlag": 1,
+            },
+        ]
+    }
+    items = parse_rakuten_api(payload)
+    assert len(items) == 2
+    assert items[0].shipping_included is True
+    best = rank_items(items)[0]
+    # The used cheaper item is filtered out; the new in-stock item ranks first.
+    assert best.price_yen == 38000
+    assert best.shop == "shopA"
+
+
+def test_parse_yahoo_api_filters_used_and_picks_cheapest():
+    payload = {
+        "hits": [
+            {
+                "name": "Switch 有機EL ネオン",
+                "price": 39000,
+                "url": "https://store.shopping.yahoo.co.jp/shopa/x",
+                "seller": {"name": "shopA"},
+                "inStock": True,
+                "condition": "new",
+                "shipping": {"code": 3},
+            },
+            {
+                "name": "Switch 有機EL 中古",
+                "price": 28000,
+                "url": "https://store.shopping.yahoo.co.jp/shopb/y",
+                "seller": {"name": "shopB"},
+                "inStock": True,
+                "condition": "used",
+                "shipping": {"code": 1},
+            },
+        ]
+    }
+    items = parse_yahoo_api(payload)
+    assert len(items) == 1  # used item dropped
+    best = rank_items(items)[0]
+    assert best.price_yen == 39000
+    assert best.shipping_included is True
+    assert best.jan == ""
+
+
+def test_parse_yahoo_api_keeps_jan_code():
+    payload = {
+        "hits": [
+            {"name": "Switch", "price": 39000, "url": "u", "seller": {"name": "s"},
+             "inStock": True, "condition": "new", "janCode": "4902370548501"},
+        ]
+    }
+    items = parse_yahoo_api(payload)
+    assert items[0].jan == "4902370548501"
+
+
+def test_rank_items_prefers_in_stock_over_cheaper_out_of_stock():
+    payload = {
+        "Items": [
+            {"itemName": "A", "itemPrice": 30000, "itemUrl": "u1", "shopName": "s1",
+             "availability": 0, "postageFlag": 0},
+            {"itemName": "B", "itemPrice": 35000, "itemUrl": "u2", "shopName": "s2",
+             "availability": 1, "postageFlag": 0},
+        ]
+    }
+    ranked = rank_items(parse_rakuten_api(payload))
+    assert ranked[0].price_yen == 35000  # in-stock outranks cheaper sold-out
