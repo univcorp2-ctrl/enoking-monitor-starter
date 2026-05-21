@@ -2,6 +2,14 @@ name: Daily supplier monitor
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "config/**"
+      - ".github/workflows/daily-monitor.yml"
+      - "requirements*.txt"
   schedule:
     # 09:30 JST every day
     - cron: "30 0 * * *"
@@ -11,6 +19,8 @@ permissions:
 
 env:
   BUY_MARGIN_THRESHOLD_YEN: "2000"
+  REQUEST_INTERVAL_SEC: "2.0"
+  REQUEST_TIMEOUT_SEC: "20"
 
 jobs:
   monitor:
@@ -32,15 +42,21 @@ jobs:
       - name: Run tests
         run: pytest -q
 
-      - name: Run monitor
+      - name: Run production monitor
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+          YAHOO_CLIENT_ID: ${{ secrets.YAHOO_CLIENT_ID }}
         run: python src/monitor.py
 
-      - name: Upload result CSV
+      - name: Upload monitor artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: monitor-results
-          path: output/*.csv
+          name: monitor-results-${{ github.run_number }}
+          path: |
+            output/*.csv
+            output/*.xlsx
           retention-days: 30
+          if-no-files-found: warn
