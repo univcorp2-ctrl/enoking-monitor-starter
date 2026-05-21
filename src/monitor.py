@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,9 +27,10 @@ OUTPUT_DIR = ROOT / "output"
 JST = timezone(timedelta(hours=9), "JST")
 BUY_MARGIN_THRESHOLD_YEN = int(os.getenv("BUY_MARGIN_THRESHOLD_YEN", "2000"))
 REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "20"))
+REQUEST_INTERVAL_SEC = float(os.getenv("REQUEST_INTERVAL_SEC", "2.0"))
 USER_AGENT = os.getenv(
     "MONITOR_USER_AGENT",
-    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.0; +https://github.com/)"
+    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.1; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)"
 )
 
 NEGATIVE_STOCK_SIGNALS = [
@@ -52,6 +54,7 @@ JS_REQUIRED_SIGNALS = [
     "このページではjavascriptを使用しています",
     "javascriptを使用しています",
 ]
+DISCOVERY_HINTS = {"search_discovery", "manual", "manual_check"}
 
 
 @dataclass
@@ -202,6 +205,15 @@ def parse_yodobashi(text: str) -> ParseResult:
     return ParseResult(price, in_stock, stock_signal_summary(text), "")
 
 
+def parse_search_discovery(text: str) -> ParseResult:
+    normalized = normalize_text(text)
+    signals = stock_signal_summary(normalized)
+    note_parts = ["DISCOVERY_ONLY_SEARCH_PAGE", "NO_BUY_DECISION"]
+    if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
+        note_parts.append("NEEDS_BROWSER_OR_MANUAL_CHECK")
+    return ParseResult(None, None, signals, "|".join(note_parts))
+
+
 def parse_generic(text: str) -> ParseResult:
     prices = extract_prices(text)
     price = min(prices) if prices else None
@@ -210,10 +222,14 @@ def parse_generic(text: str) -> ParseResult:
 
 def parse_page(text: str, supplier: Supplier) -> ParseResult:
     normalized = normalize_text(text)
+    hint = supplier.parser_hint.lower()
+
+    if hint in DISCOVERY_HINTS:
+        return parse_search_discovery(normalized)
+
     if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
         return ParseResult(None, None, stock_signal_summary(normalized), "NEEDS_BROWSER_OR_MANUAL_CHECK")
 
-    hint = supplier.parser_hint.lower()
     if hint == "yahoo":
         return parse_yahoo(normalized)
     if hint == "nojima":
@@ -233,6 +249,15 @@ def stock_signal_summary(text: str) -> str:
     return "|".join(dict.fromkeys(signals))
 
 
+def is_discovery_only(supplier: Supplier, parsed: ParseResult | None = None) -> bool:
+    hint = supplier.parser_hint.lower()
+    if hint in DISCOVERY_HINTS:
+        return True
+    if parsed and "DISCOVERY_ONLY" in parsed.notes:
+        return True
+    return False
+
+
 def fetch(url: str) -> tuple[int | None, str, str]:
     try:
         response = requests.get(
@@ -250,6 +275,14 @@ def fetch(url: str) -> tuple[int | None, str, str]:
 
 
 def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[str, Any]:
+    if is_discovery_only(supplier, result):
+        return {
+            "effective_price_yen": None,
+            "gross_profit_yen": None,
+            "is_buy_candidate": False,
+            "decision_reason": "DISCOVERY_ONLY_NO_BUY_DECISION",
+        }
+
     price = result.parsed_price_yen or supplier.expected_price_yen
     gross_profit = product.enoking_buy_price_yen - price if price else None
     buy_candidate = (
@@ -260,10 +293,19 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
         and gross_profit is not None
         and gross_profit >= BUY_MARGIN_THRESHOLD_YEN
     )
+    reason = "BUY_CANDIDATE" if buy_candidate else "NOT_BUY_CANDIDATE"
+    if price is None:
+        reason = "NO_PRICE"
+    elif result.in_stock is not True:
+        reason = "NO_POSITIVE_STOCK_SIGNAL"
+    elif gross_profit is not None and gross_profit < BUY_MARGIN_THRESHOLD_YEN:
+        reason = "MARGIN_BELOW_THRESHOLD"
+
     return {
         "effective_price_yen": price,
         "gross_profit_yen": gross_profit,
         "is_buy_candidate": buy_candidate,
+        "decision_reason": reason,
     }
 
 
@@ -298,11 +340,14 @@ def main() -> int:
     checked_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
 
     rows: list[dict[str, Any]] = []
-    for supplier in suppliers:
+    for idx, supplier in enumerate(suppliers):
         product = products.get(supplier.jan)
         if not product:
             print(f"Skipping unknown JAN: {supplier.jan}", file=sys.stderr)
             continue
+
+        if idx > 0 and REQUEST_INTERVAL_SEC > 0:
+            time.sleep(REQUEST_INTERVAL_SEC)
 
         status_code, html, fetch_error = fetch(supplier.url)
         if fetch_error:
@@ -329,6 +374,7 @@ def main() -> int:
             "shipping_included": supplier.shipping_included,
             "condition_required": supplier.condition_required,
             "is_buy_candidate": eval_result["is_buy_candidate"],
+            "decision_reason": eval_result["decision_reason"],
             "raw_signals": parsed.raw_signals,
             "notes": "; ".join(part for part in [supplier.notes, parsed.notes] if part),
         }
@@ -348,6 +394,7 @@ def main() -> int:
         "output": str(out_path),
         "checked": len(rows),
         "buy_candidates": len(candidates),
+        "discovery_only": sum(1 for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"),
     }, ensure_ascii=False, indent=2))
     return 0
 
