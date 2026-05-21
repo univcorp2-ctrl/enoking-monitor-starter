@@ -1,0 +1,41 @@
+jan,supplier,url,expected_price_yen,shipping_included,condition_required,enabled,parser_hint,notes
+4902370552683,au PAY Market Search Discovery,https://wowma.jp/search?keyword=4902370552683,,true,new,true,search_discovery,総合モール候補。公式の一般商品検索APIが確認できるまで低頻度Discovery扱い
+4902370552683,Qoo10 Search Discovery,https://www.qoo10.jp/s/?keyword=4902370552683,,true,new,true,search_discovery,マーケットプレイス。真贋/新品/送料条件の確認が必要。買い判定不可
+4902370552683,Mercari Search Discovery,https://jp.mercari.com/search?keyword=4902370552683,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ。自動取得は控えめ
+4902370552683,Yahoo Auctions Search Discovery,https://auctions.yahoo.co.jp/search/search?p=4902370552683,,false,used,true,manual_check,オークション。相場確認のみ。自動入札/購入は実装しない
+4902370552683,Rakuma Search Discovery,https://fril.jp/search/4902370552683,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ
+4902370552683,PayPay Flea Market Search Discovery,https://paypayfleamarket.yahoo.co.jp/search/4902370552683,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ
+4902370552683,Kakaku.com Search Discovery,https://kakaku.com/search_results/4902370552683/,,true,new,true,search_discovery,比較サイト。取扱店発見用。買い判定や高頻度取得は避ける
+4902370552683,Hikaku.com Search Discovery,https://www.hikaku.com/search/?q=4902370552683,,true,new,true,search_discovery,比較サイト。取扱店発見用
+4902370552683,Akiba Sofmap Search Discovery,https://a.sofmap.com/search_result.aspx?keyword=4902370552683,,true,new,true,search_discovery,ソフマップ系。中古混在注意。新品/送料込み確認後に個別URL化
+4902370552683,Trader Search Discovery,https://www.e-trader.jp/search/?keyword=4902370552683,,true,new,true,search_discovery,ゲーム/ホビー系。サイト構造確認後に個別URL化
+4902370552683,AmiAmi Search Discovery,https://slist.amiami.jp/top/search/list?s_keywords=4902370552683,,true,new,true,search_discovery,ホビー系。ゲーム周辺商材向き。該当時のみ個別URL化
+4902370552683,Yodobashi Search Discovery,https://www.yodobashi.com/?word=4902370552683,,true,new,true,search_discovery,公式EC検索。個別商品URL化できるものだけ専用パーサー対象
+4902370552683,Kojima.net Search Discovery,https://www.kojima.net/ec/prod_list.html?keyword=4902370552683,,true,new,true,search_discovery,ビックカメラグループ。公式EC検索。個別商品URL化候補
+4902370552683,KsDenki Online Search Discovery,https://www.ksdenki.com/shop/goods/search.aspx?search=x&keyword=4902370552683,,true,new,true,search_discovery,家電量販店。低頻度Discovery
+4902370552683,PC DEPOT Search Discovery,https://www.pcdepot.co.jp/search/?keyword=4902370552683,,true,new,true,search_discovery,PC/周辺機器向き。ゲーム本体該当は限定的
+4902370552683,Janpara Search Discovery,https://www.janpara.co.jp/sale/search/result/?KEYWORDS=4902370552683,,false,used,true,manual_check,中古中心。新品仕入れではなく相場確認用
+4902370552683,Iosys Search Discovery,https://iosys.co.jp/items/search?keyword=4902370552683,,false,used,true,manual_check,中古デバイス中心。ゲーム機中古相場確認用
+4902370552683,HardOff NetMall Search Discovery,https://netmall.hardoff.co.jp/search/?q=4902370552683,,false,used,true,manual_check,中古/ジャンク混在。相場確認用
+4902370552683,Mandarake Search Discovery,https://order.mandarake.co.jp/order/listPage/list?keyword=4902370552683,,false,used,true,manual_check,中古/コレクター品。相場確認用
+4902370552683,ToysRUs Search Discovery,https://www.toysrus.co.jp/search/?q=4902370552683,,true,new,true,search_discovery,ゲーム/玩具系。低頻度Discovery
+4902370548501,au PAY Market Search Discovery,https://wowma.jp/search?keyword=4902370548501,,true,new,true,search_discovery,総合モール候補。公式の一般商品検索APIが確認できるまで低頻度Discovery扱い
+4902370548501,Qoo10 Search Discovery,https://www.qoo10.jp/s/?keyword=4902370548501,,true,new,true,search_discovery,マーケットプレイス。真贋/新品/送料条件の確認が必要。買い判定不可
+4902370548501,Mercari Search Discovery,https://jp.mercari.com/search?keyword=4902370548501,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ。自動取得は控えめ
+4902370548501,Yahoo Auctions Search Discovery,https://auctions.yahoo.co.jp/search/search?p=4902370548501,,false,used,true,manual_check,オークション。相場確認のみ。自動入札/購入は実装しない
+4902370548501,Rakuma Search Discovery,https://fril.jp/search/4902370548501,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ
+4902370548501,PayPay Flea Market Search Discovery,https://paypayfleamarket.yahoo.co.jp/search/4902370548501,,false,used,true,manual_check,個人出品・中古中心。仕入れ候補発見のみ
+4902370548501,Kakaku.com Search Discovery,https://kakaku.com/search_results/4902370548501/,,true,new,true,search_discovery,比較サイト。取扱店発見用。買い判定や高頻度取得は避ける
+4902370548501,Hikaku.com Search Discovery,https://www.hikaku.com/search/?q=4902370548501,,true,new,true,search_discovery,比較サイト。取扱店発見用
+4902370548501,Akiba Sofmap Search Discovery,https://a.sofmap.com/search_result.aspx?keyword=4902370548501,,true,new,true,search_discovery,ソフマップ系。中古混在注意。新品/送料込み確認後に個別URL化
+4902370548501,Trader Search Discovery,https://www.e-trader.jp/search/?keyword=4902370548501,,true,new,true,search_discovery,ゲーム/ホビー系。サイト構造確認後に個別URL化
+4902370548501,AmiAmi Search Discovery,https://slist.amiami.jp/top/search/list?s_keywords=4902370548501,,true,new,true,search_discovery,ホビー系。ゲーム周辺商材向き。該当時のみ個別URL化
+4902370548501,Yodobashi Search Discovery,https://www.yodobashi.com/?word=4902370548501,,true,new,true,search_discovery,公式EC検索。個別商品URL化できるものだけ専用パーサー対象
+4902370548501,Kojima.net Search Discovery,https://www.kojima.net/ec/prod_list.html?keyword=4902370548501,,true,new,true,search_discovery,ビックカメラグループ。公式EC検索。個別商品URL化候補
+4902370548501,KsDenki Online Search Discovery,https://www.ksdenki.com/shop/goods/search.aspx?search=x&keyword=4902370548501,,true,new,true,search_discovery,家電量販店。低頻度Discovery
+4902370548501,PC DEPOT Search Discovery,https://www.pcdepot.co.jp/search/?keyword=4902370548501,,true,new,true,search_discovery,PC/周辺機器向き。ゲーム本体該当は限定的
+4902370548501,Janpara Search Discovery,https://www.janpara.co.jp/sale/search/result/?KEYWORDS=4902370548501,,false,used,true,manual_check,中古中心。新品仕入れではなく相場確認用
+4902370548501,Iosys Search Discovery,https://iosys.co.jp/items/search?keyword=4902370548501,,false,used,true,manual_check,中古デバイス中心。ゲーム機中古相場確認用
+4902370548501,HardOff NetMall Search Discovery,https://netmall.hardoff.co.jp/search/?q=4902370548501,,false,used,true,manual_check,中古/ジャンク混在。相場確認用
+4902370548501,Mandarake Search Discovery,https://order.mandarake.co.jp/order/listPage/list?keyword=4902370548501,,false,used,true,manual_check,中古/コレクター品。相場確認用
+4902370548501,ToysRUs Search Discovery,https://www.toysrus.co.jp/search/?q=4902370548501,,true,new,true,search_discovery,ゲーム/玩具系。低頻度Discovery
