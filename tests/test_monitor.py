@@ -1,12 +1,13 @@
-from src.monitor import Supplier, parse_page
+from src.monitor import Supplier, evaluate, parse_page
+from src.monitor import Product
 
 
-def make_supplier(parser_hint: str) -> Supplier:
+def make_supplier(parser_hint: str, expected_price_yen=None) -> Supplier:
     return Supplier(
         jan="4902370548501",
         supplier="test",
         url="https://example.com",
-        expected_price_yen=None,
+        expected_price_yen=expected_price_yen,
         shipping_included=True,
         condition_required="new",
         enabled=True,
@@ -35,3 +36,20 @@ def test_js_required_detection():
     assert result.parsed_price_yen is None
     assert result.in_stock is None
     assert "NEEDS_BROWSER" in result.notes
+
+
+def test_search_discovery_never_extracts_price_or_stock():
+    html = "検索結果 37,980円 カートに入れる 在庫あり"
+    result = parse_page(html, make_supplier("search_discovery"))
+    assert result.parsed_price_yen is None
+    assert result.in_stock is None
+    assert "DISCOVERY_ONLY" in result.notes
+
+
+def test_search_discovery_never_becomes_buy_candidate_even_with_expected_price():
+    product = Product("4902370548501", "Nintendo Switch OLED", 45300, "new")
+    supplier = make_supplier("search_discovery", expected_price_yen=37980)
+    result = parse_page("37,980円 カートに入れる 在庫あり", supplier)
+    evaluated = evaluate(product, supplier, result)
+    assert evaluated["is_buy_candidate"] is False
+    assert evaluated["decision_reason"] == "DISCOVERY_ONLY_NO_BUY_DECISION"
