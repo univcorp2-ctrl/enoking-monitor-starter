@@ -1,10 +1,11 @@
 """Enoking supplier monitor starter.
 
-Fetches supplier pages, extracts rough price/stock signals, compares with
-Enoking buyback prices, and writes a CSV report.
+Fetches supplier pages or official supplier APIs, extracts rough price/stock signals,
+compares them with Enoking buyback prices, and writes a CSV report.
 
-This script intentionally does not automate purchases, login, CAPTCHA, or
-queue bypass. Use low-frequency scheduled runs and respect each site's terms.
+This script intentionally does not automate purchases, login, CAPTCHA, waiting-room
+bypass, or cart actions. Use low-frequency scheduled runs and respect each site's
+terms and robots.txt.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
@@ -25,12 +27,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
 OUTPUT_DIR = ROOT / "output"
 JST = timezone(timedelta(hours=9), "JST")
+
 BUY_MARGIN_THRESHOLD_YEN = int(os.getenv("BUY_MARGIN_THRESHOLD_YEN", "2000"))
 REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "20"))
 REQUEST_INTERVAL_SEC = float(os.getenv("REQUEST_INTERVAL_SEC", "2.0"))
 USER_AGENT = os.getenv(
     "MONITOR_USER_AGENT",
-    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.1; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)"
+    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.2; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)",
 )
 
 NEGATIVE_STOCK_SIGNALS = [
@@ -48,6 +51,7 @@ POSITIVE_STOCK_SIGNALS = [
     "即納（在庫あり）",
     "在庫あり",
     "注文する",
+    "在庫数",
 ]
 JS_REQUIRED_SIGNALS = [
     "JavaScriptを有効にする必要があります",
@@ -55,6 +59,7 @@ JS_REQUIRED_SIGNALS = [
     "javascriptを使用しています",
 ]
 DISCOVERY_HINTS = {"search_discovery", "manual", "manual_check"}
+API_HINTS = {"rakuten_api", "yahoo_api"}
 
 
 @dataclass
@@ -146,7 +151,8 @@ def yen_to_int(value: str) -> int | None:
 
 def extract_prices(text: str) -> list[int]:
     candidates: list[int] = []
-    for match in re.finditer(r"(?:￥|価格[:：]?|税込|本体価格)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*円?", text):
+    pattern = r"(?:￥|価格[:：]?|税込|本体価格)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*円?"
+    for match in re.finditer(pattern, text):
         price = yen_to_int(match.group(1))
         if price and 10_000 <= price <= 200_000:
             candidates.append(price)
@@ -168,30 +174,38 @@ def detect_stock(text: str) -> bool | None:
     return None
 
 
+def stock_signal_summary(text: str) -> str:
+    signals: list[str] = []
+    for signal in NEGATIVE_STOCK_SIGNALS + POSITIVE_STOCK_SIGNALS + JS_REQUIRED_SIGNALS:
+        if signal in text:
+            signals.append(signal)
+    return "|".join(dict.fromkeys(signals))
+
+
 def parse_yahoo(text: str) -> ParseResult:
     price = first_price_after_label(text, r"価格")
-    in_stock = detect_stock(text)
-    return ParseResult(price, in_stock, stock_signal_summary(text), "")
+    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_nojima(text: str) -> ParseResult:
-    # Nojima pages can contain reference price followed by actual price.
     price = None
-    match = re.search(r"価格[:：].{0,180}?(?:参考価格[:：].{0,80}?)?([0-9]{1,3}(?:,[0-9]{3})+)円\s*\(税込\)", text, re.DOTALL)
+    match = re.search(
+        r"価格[:：].{0,180}?(?:参考価格[:：].{0,80}?)?([0-9]{1,3}(?:,[0-9]{3})+)円\s*\(税込\)",
+        text,
+        re.DOTALL,
+    )
     if match:
         price = yen_to_int(match.group(1))
     if price is None:
         prices = extract_prices(text)
         if prices:
             price = min(prices)
-    in_stock = detect_stock(text)
-    return ParseResult(price, in_stock, stock_signal_summary(text), "")
+    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_aeon(text: str) -> ParseResult:
     price = first_price_after_label(text, r"税込") or first_price_after_label(text, r"本体価格")
-    in_stock = detect_stock(text)
-    return ParseResult(price, in_stock, stock_signal_summary(text), "")
+    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_yodobashi(text: str) -> ParseResult:
@@ -201,17 +215,15 @@ def parse_yodobashi(text: str) -> ParseResult:
         price = yen_to_int(match.group(1))
     if price is None:
         price = first_price_after_label(text, r"価格")
-    in_stock = detect_stock(text)
-    return ParseResult(price, in_stock, stock_signal_summary(text), "")
+    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_search_discovery(text: str) -> ParseResult:
     normalized = normalize_text(text)
-    signals = stock_signal_summary(normalized)
     note_parts = ["DISCOVERY_ONLY_SEARCH_PAGE", "NO_BUY_DECISION"]
     if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
         note_parts.append("NEEDS_BROWSER_OR_MANUAL_CHECK")
-    return ParseResult(None, None, signals, "|".join(note_parts))
+    return ParseResult(None, None, stock_signal_summary(normalized), "|".join(note_parts))
 
 
 def parse_generic(text: str) -> ParseResult:
@@ -220,16 +232,106 @@ def parse_generic(text: str) -> ParseResult:
     return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
+def best_rakuten_item(items: list[dict[str, Any]]) -> tuple[int | None, bool | None, str, str]:
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    for wrapper in items:
+        item = wrapper.get("Item", wrapper)
+        price = parse_int(str(item.get("itemPrice", "")))
+        name = str(item.get("itemName", ""))
+        availability = item.get("availability")
+        if price and "中古" not in name:
+            candidates.append((price, item))
+    if not candidates:
+        return None, None, "", "API_NO_NEW_ITEM_CANDIDATE"
+    price, item = min(candidates, key=lambda pair: pair[0])
+    in_stock = str(item.get("availability", "")) == "1"
+    signals = f"shop={item.get('shopName','')}|name={item.get('itemName','')}|availability={item.get('availability','')}"
+    notes = f"API_ITEM_URL={item.get('itemUrl','')}"
+    return price, in_stock, signals, notes
+
+
+def best_yahoo_item(hits: list[dict[str, Any]]) -> tuple[int | None, bool | None, str, str]:
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    for item in hits:
+        price = parse_int(str(item.get("price", "") or item.get("Price", "")))
+        name = str(item.get("name", "") or item.get("Name", ""))
+        if price and "中古" not in name:
+            candidates.append((price, item))
+    if not candidates:
+        return None, None, "", "API_NO_NEW_ITEM_CANDIDATE"
+    price, item = min(candidates, key=lambda pair: pair[0])
+    availability_value = str(item.get("inStock", item.get("availability", ""))).lower()
+    in_stock = None
+    if availability_value in {"true", "1", "instock", "in_stock"}:
+        in_stock = True
+    elif availability_value in {"false", "0", "outofstock", "out_of_stock"}:
+        in_stock = False
+    signals = f"store={item.get('seller', {}).get('name', '') if isinstance(item.get('seller'), dict) else item.get('seller','')}|name={item.get('name','')}|inStock={item.get('inStock','')}"
+    notes = f"API_ITEM_URL={item.get('url','')}"
+    return price, in_stock, signals, notes
+
+
+def fetch_api_supplier(supplier: Supplier) -> tuple[int | None, str, str]:
+    parsed_url = urlparse(supplier.url)
+    query = {k: v[0] for k, v in parse_qs(parsed_url.query).items()}
+
+    if supplier.parser_hint == "rakuten_api":
+        app_id = os.getenv("RAKUTEN_APPLICATION_ID")
+        if not app_id:
+            return None, "", "API_SKIPPED: RAKUTEN_APPLICATION_ID is not set"
+        params = {
+            "applicationId": app_id,
+            "format": "json",
+            "keyword": query.get("keyword", supplier.jan),
+            "hits": "30",
+            "sort": "+itemPrice",
+        }
+        url = "https://app.rakuten.co.jp/services/api/IchibaItem/Search/20220601?" + urlencode(params)
+    elif supplier.parser_hint == "yahoo_api":
+        client_id = os.getenv("YAHOO_CLIENT_ID")
+        if not client_id:
+            return None, "", "API_SKIPPED: YAHOO_CLIENT_ID is not set"
+        params = {
+            "appid": client_id,
+            "jan_code": query.get("jan_code", supplier.jan),
+            "results": "30",
+            "sort": "+price",
+        }
+        url = "https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch?" + urlencode(params)
+    else:
+        return None, "", f"API_SKIPPED: unsupported parser_hint={supplier.parser_hint}"
+
+    return fetch(url)
+
+
+def parse_api_response(text: str, supplier: Supplier) -> ParseResult:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return ParseResult(None, None, "", f"API_JSON_ERROR: {exc}")
+
+    if supplier.parser_hint == "rakuten_api":
+        price, in_stock, signals, notes = best_rakuten_item(payload.get("Items", []))
+        return ParseResult(price, in_stock, signals, notes)
+
+    if supplier.parser_hint == "yahoo_api":
+        hits = payload.get("hits") or payload.get("Hit") or []
+        price, in_stock, signals, notes = best_yahoo_item(hits)
+        return ParseResult(price, in_stock, signals, notes)
+
+    return ParseResult(None, None, "", "API_UNSUPPORTED")
+
+
 def parse_page(text: str, supplier: Supplier) -> ParseResult:
+    if supplier.parser_hint in API_HINTS:
+        return parse_api_response(text, supplier)
+
     normalized = normalize_text(text)
     hint = supplier.parser_hint.lower()
-
     if hint in DISCOVERY_HINTS:
         return parse_search_discovery(normalized)
-
     if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
         return ParseResult(None, None, stock_signal_summary(normalized), "NEEDS_BROWSER_OR_MANUAL_CHECK")
-
     if hint == "yahoo":
         return parse_yahoo(normalized)
     if hint == "nojima":
@@ -239,14 +341,6 @@ def parse_page(text: str, supplier: Supplier) -> ParseResult:
     if hint == "yodobashi":
         return parse_yodobashi(normalized)
     return parse_generic(normalized)
-
-
-def stock_signal_summary(text: str) -> str:
-    signals: list[str] = []
-    for signal in NEGATIVE_STOCK_SIGNALS + POSITIVE_STOCK_SIGNALS + JS_REQUIRED_SIGNALS:
-        if signal in text:
-            signals.append(signal)
-    return "|".join(dict.fromkeys(signals))
 
 
 def is_discovery_only(supplier: Supplier, parsed: ParseResult | None = None) -> bool:
@@ -293,6 +387,7 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
         and gross_profit is not None
         and gross_profit >= BUY_MARGIN_THRESHOLD_YEN
     )
+
     reason = "BUY_CANDIDATE" if buy_candidate else "NOT_BUY_CANDIDATE"
     if price is None:
         reason = "NO_PRICE"
@@ -338,8 +433,8 @@ def main() -> int:
     suppliers = [s for s in load_suppliers() if s.enabled]
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     checked_at = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S %Z")
-
     rows: list[dict[str, Any]] = []
+
     for idx, supplier in enumerate(suppliers):
         product = products.get(supplier.jan)
         if not product:
@@ -349,11 +444,15 @@ def main() -> int:
         if idx > 0 and REQUEST_INTERVAL_SEC > 0:
             time.sleep(REQUEST_INTERVAL_SEC)
 
-        status_code, html, fetch_error = fetch(supplier.url)
+        if supplier.url.startswith("api://"):
+            status_code, body, fetch_error = fetch_api_supplier(supplier)
+        else:
+            status_code, body, fetch_error = fetch(supplier.url)
+
         if fetch_error:
             parsed = ParseResult(None, None, "", fetch_error)
         else:
-            parsed = parse_page(html, supplier)
+            parsed = parse_page(body, supplier)
 
         eval_result = evaluate(product, supplier, parsed)
         row: dict[str, Any] = {
@@ -389,13 +488,21 @@ def main() -> int:
 
     candidates = [row for row in rows if row["is_buy_candidate"]]
     notify(candidates)
-
-    print(json.dumps({
-        "output": str(out_path),
-        "checked": len(rows),
-        "buy_candidates": len(candidates),
-        "discovery_only": sum(1 for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"),
-    }, ensure_ascii=False, indent=2))
+    print(
+        json.dumps(
+            {
+                "output": str(out_path),
+                "checked": len(rows),
+                "buy_candidates": len(candidates),
+                "discovery_only": sum(
+                    1 for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"
+                ),
+                "api_skipped": sum(1 for row in rows if "API_SKIPPED" in str(row.get("notes", ""))),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
