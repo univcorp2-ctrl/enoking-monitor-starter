@@ -12,6 +12,27 @@ def make_candidate(jan: str, supplier: str, price: int) -> dict:
     return {"jan": jan, "supplier": supplier, "effective_price_yen": price}
 
 
+def test_parse_jsonld_extracts_price_and_stock():
+    from src.monitor import parse_jsonld
+    html = '''<html><head>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product",
+      "name":"Switch OLED","offers":{"@type":"Offer","price":"37980",
+      "availability":"https://schema.org/InStock"}}</script>
+    </head></html>'''
+    r = parse_jsonld(html)
+    assert r is not None
+    assert r.parsed_price_yen == 37980
+    assert r.in_stock is True
+
+    html_oos = html.replace("InStock", "OutOfStock")
+    assert parse_jsonld(html_oos).in_stock is False
+
+    html_pre = html.replace("InStock", "PreOrder")
+    assert parse_jsonld(html_pre).in_stock is None  # PreOrder is ambiguous
+
+    assert parse_jsonld("<html><body>no jsonld</body></html>") is None
+
+
 def test_fresh_candidates_suppresses_repeat_alerts():
     cand = [make_candidate("4902370548501", "shopA", 40000)]
     # First run: nothing notified yet -> alert.

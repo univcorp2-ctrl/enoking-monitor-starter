@@ -191,6 +191,71 @@ def detect_stock(text: str) -> bool | None:
     return None
 
 
+JSONLD_IN_STOCK = {
+    "InStock", "LimitedAvailability", "OnlineOnly",
+}
+JSONLD_OUT_OF_STOCK = {
+    "OutOfStock", "SoldOut", "Discontinued",
+}
+JSONLD_AMBIGUOUS = {
+    "PreOrder", "PreSale", "BackOrder",
+}
+
+
+def parse_jsonld(html: str) -> ParseResult | None:
+    """Extract price/stock from a Product JSON-LD block (the most reliable
+    signal on modern EC pages). Returns None when no usable Product schema
+    is present."""
+    blocks = re.findall(
+        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.+?)</script>',
+        html,
+        flags=re.DOTALL,
+    )
+    for raw in blocks:
+        try:
+            data = json.loads(raw.strip())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        for product in _find_products(data):
+            offers = product.get("offers") or {}
+            if isinstance(offers, list):
+                offers = offers[0] if offers else {}
+            if not isinstance(offers, dict):
+                continue
+            price = parse_int(offers.get("price"))
+            availability = str(offers.get("availability") or "").rsplit("/", 1)[-1]
+            if price is None and not availability:
+                continue
+            in_stock: bool | None
+            if availability in JSONLD_IN_STOCK:
+                in_stock = True
+            elif availability in JSONLD_OUT_OF_STOCK:
+                in_stock = False
+            else:
+                in_stock = None
+            name = str(product.get("name") or "")[:40]
+            return ParseResult(
+                parsed_price_yen=price,
+                in_stock=in_stock,
+                raw_signals=f"jsonld|availability={availability or '?'}",
+                notes=f"JSON-LD: {name}" if name else "JSON-LD",
+            )
+    return None
+
+
+def _find_products(node: Any):
+    if isinstance(node, dict):
+        type_value = node.get("@type")
+        types = type_value if isinstance(type_value, list) else [type_value]
+        if "Product" in types:
+            yield node
+        for value in node.values():
+            yield from _find_products(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _find_products(item)
+
+
 def parse_yahoo(text: str) -> ParseResult:
     price = first_price_after_label(text, r"価格")
     in_stock = detect_stock(text)
@@ -243,6 +308,13 @@ def parse_generic(text: str) -> ParseResult:
 
 
 def parse_page(text: str, supplier: Supplier) -> ParseResult:
+    # JSON-LD ships clean structured data on most modern EC pages and is
+    # more reliable than regex over rendered HTML (which is rich in
+    # related-product noise).
+    jsonld = parse_jsonld(text)
+    if jsonld is not None and jsonld.parsed_price_yen is not None:
+        return jsonld
+
     normalized = normalize_text(text)
     if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
         return ParseResult(None, None, stock_signal_summary(normalized), "NEEDS_BROWSER_OR_MANUAL_CHECK")
