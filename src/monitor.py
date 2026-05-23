@@ -1,11 +1,11 @@
-"""Enoking supplier monitor starter.
+"""Low-load supplier monitor for Enoking buyback checks.
 
-Fetches supplier pages, extracts rough price/stock signals, compares them with
-Enoking buyback prices, and writes CSV/XLSX reports.
+The monitor fetches configured supplier pages, extracts conservative price and
+stock signals, compares them with Enoking buyback prices, and writes CSV/XLSX
+reports for human review.
 
-This script intentionally does not automate purchases, login, CAPTCHA, waiting
-room bypass, cart actions, or order actions. Use low-frequency scheduled runs
-and respect each site's terms and robots.txt.
+It does not automate purchases, login, CAPTCHA handling, waiting-room bypass,
+cart actions, or order actions.
 """
 from __future__ import annotations
 
@@ -21,13 +21,9 @@ from pathlib import Path
 from typing import Any
 
 import requests
-
-try:
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    from openpyxl.utils import get_column_letter
-except ImportError:  # pragma: no cover - production dependency is installed in Actions
-    Workbook = None
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = ROOT / "config"
@@ -35,11 +31,11 @@ OUTPUT_DIR = ROOT / "output"
 JST = timezone(timedelta(hours=9), "JST")
 
 BUY_MARGIN_THRESHOLD_YEN = int(os.getenv("BUY_MARGIN_THRESHOLD_YEN", "2000"))
-REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "20"))
-REQUEST_INTERVAL_SEC = float(os.getenv("REQUEST_INTERVAL_SEC", "2.0"))
+REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "15"))
+REQUEST_INTERVAL_SEC = float(os.getenv("REQUEST_INTERVAL_SEC", "1.0"))
 USER_AGENT = os.getenv(
     "MONITOR_USER_AGENT",
-    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.3; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)",
+    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.4; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)",
 )
 
 NEGATIVE_STOCK_SIGNALS = [
@@ -62,6 +58,7 @@ JS_REQUIRED_SIGNALS = [
     "JavaScriptを有効にする必要があります",
     "このページではjavascriptを使用しています",
     "javascriptを使用しています",
+    "JavaScript",
 ]
 DISCOVERY_HINTS = {"search_discovery", "manual", "manual_check"}
 
@@ -95,14 +92,12 @@ class ParseResult:
     notes: str
 
 
-def parse_bool(value: str) -> bool:
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+def parse_bool(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def parse_int(value: str | None) -> int | None:
-    if value is None:
-        return None
-    value = str(value).strip().replace(",", "")
+    value = str(value or "").strip().replace(",", "")
     if not value:
         return None
     try:
@@ -119,8 +114,8 @@ def load_products(path: Path = CONFIG_DIR / "products_sample.csv") -> dict[str, 
                 continue
             product = Product(
                 jan=row["jan"].strip(),
-                product_name=row["product_name"].strip(),
-                enoking_buy_price_yen=int(row["enoking_buy_price_yen"]),
+                product_name=row.get("product_name", "").strip(),
+                enoking_buy_price_yen=int(row.get("enoking_buy_price_yen") or 0),
                 required_condition=row.get("required_condition", "new").strip(),
             )
             products[product.jan] = product
@@ -136,10 +131,10 @@ def load_suppliers(path: Path = CONFIG_DIR / "supplier_urls.csv") -> list[Suppli
             suppliers.append(
                 Supplier(
                     jan=row["jan"].strip(),
-                    supplier=row["supplier"].strip(),
+                    supplier=row.get("supplier", "").strip(),
                     url=row["url"].strip(),
                     expected_price_yen=parse_int(row.get("expected_price_yen")),
-                    shipping_included=parse_bool(row.get("shipping_included", "false")),
+                    shipping_included=parse_bool(row.get("shipping_included")),
                     condition_required=row.get("condition_required", "new").strip(),
                     enabled=parse_bool(row.get("enabled", "true")),
                     parser_hint=row.get("parser_hint", "generic").strip(),
@@ -158,18 +153,18 @@ def yen_to_int(value: str) -> int | None:
 
 
 def extract_prices(text: str) -> list[int]:
-    candidates: list[int] = []
+    prices: list[int] = []
     pattern = r"(?:￥|価格[:：]?|税込|本体価格)?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*円?"
     for match in re.finditer(pattern, text):
         price = yen_to_int(match.group(1))
         if price and 10_000 <= price <= 200_000:
-            candidates.append(price)
-    return candidates
+            prices.append(price)
+    return prices
 
 
 def first_price_after_label(text: str, label_pattern: str) -> int | None:
     match = re.search(
-        label_pattern + r".{0,120}?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*円",
+        label_pattern + r".{0,140}?([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,6})\s*円",
         text,
         re.DOTALL,
     )
@@ -195,23 +190,19 @@ def detect_stock(text: str) -> bool | None:
 
 
 def parse_yahoo(text: str) -> ParseResult:
-    price = first_price_after_label(text, r"価格")
-    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
+    return ParseResult(first_price_after_label(text, r"価格"), detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_nojima(text: str) -> ParseResult:
-    price = None
     match = re.search(
         r"価格[:：].{0,180}?(?:参考価格[:：].{0,80}?)?([0-9]{1,3}(?:,[0-9]{3})+)円\s*\(税込\)",
         text,
         re.DOTALL,
     )
-    if match:
-        price = yen_to_int(match.group(1))
+    price = yen_to_int(match.group(1)) if match else None
     if price is None:
         prices = extract_prices(text)
-        if prices:
-            price = min(prices)
+        price = min(prices) if prices else None
     return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
@@ -221,10 +212,8 @@ def parse_aeon(text: str) -> ParseResult:
 
 
 def parse_yodobashi(text: str) -> ParseResult:
-    price = None
     match = re.search(r"￥\s*([0-9]{1,3}(?:,[0-9]{3})+)", text)
-    if match:
-        price = yen_to_int(match.group(1))
+    price = yen_to_int(match.group(1)) if match else None
     if price is None:
         price = first_price_after_label(text, r"価格")
     return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
@@ -232,16 +221,15 @@ def parse_yodobashi(text: str) -> ParseResult:
 
 def parse_search_discovery(text: str) -> ParseResult:
     normalized = normalize_text(text)
-    note_parts = ["DISCOVERY_ONLY_SEARCH_PAGE", "NO_BUY_DECISION"]
+    notes = ["DISCOVERY_ONLY_SEARCH_PAGE", "NO_BUY_DECISION"]
     if any(signal in normalized for signal in JS_REQUIRED_SIGNALS):
-        note_parts.append("NEEDS_BROWSER_OR_MANUAL_CHECK")
-    return ParseResult(None, None, stock_signal_summary(normalized), "|".join(note_parts))
+        notes.append("NEEDS_BROWSER_OR_MANUAL_CHECK")
+    return ParseResult(None, None, stock_signal_summary(normalized), "|".join(notes))
 
 
 def parse_generic(text: str) -> ParseResult:
     prices = extract_prices(text)
-    price = min(prices) if prices else None
-    return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
+    return ParseResult(min(prices) if prices else None, detect_stock(text), stock_signal_summary(text), "")
 
 
 def parse_page(text: str, supplier: Supplier) -> ParseResult:
@@ -263,12 +251,7 @@ def parse_page(text: str, supplier: Supplier) -> ParseResult:
 
 
 def is_discovery_only(supplier: Supplier, parsed: ParseResult | None = None) -> bool:
-    hint = supplier.parser_hint.lower()
-    if hint in DISCOVERY_HINTS:
-        return True
-    if parsed and "DISCOVERY_ONLY" in parsed.notes:
-        return True
-    return False
+    return supplier.parser_hint.lower() in DISCOVERY_HINTS or bool(parsed and "DISCOVERY_ONLY" in parsed.notes)
 
 
 def fetch(url: str) -> tuple[int | None, str, str]:
@@ -277,10 +260,7 @@ def fetch(url: str) -> tuple[int | None, str, str]:
     try:
         response = requests.get(
             url,
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-            },
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"},
             timeout=REQUEST_TIMEOUT_SEC,
         )
         response.encoding = response.apparent_encoding or response.encoding
@@ -297,7 +277,6 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
             "is_buy_candidate": False,
             "decision_reason": "DISCOVERY_ONLY_NO_BUY_DECISION",
         }
-
     price = result.parsed_price_yen or supplier.expected_price_yen
     gross_profit = product.enoking_buy_price_yen - price if price else None
     buy_candidate = (
@@ -308,7 +287,6 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
         and gross_profit is not None
         and gross_profit >= BUY_MARGIN_THRESHOLD_YEN
     )
-
     reason = "BUY_CANDIDATE" if buy_candidate else "NOT_BUY_CANDIDATE"
     if price is None:
         reason = "NO_PRICE"
@@ -316,7 +294,6 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
         reason = "NO_POSITIVE_STOCK_SIGNAL"
     elif gross_profit is not None and gross_profit < BUY_MARGIN_THRESHOLD_YEN:
         reason = "MARGIN_BELOW_THRESHOLD"
-
     return {
         "effective_price_yen": price,
         "gross_profit_yen": gross_profit,
@@ -325,92 +302,9 @@ def evaluate(product: Product, supplier: Supplier, result: ParseResult) -> dict[
     }
 
 
-def notify(candidates: list[dict[str, Any]]) -> None:
-    if not candidates:
-        return
-
-    lines = ["Enoking monitor: buy candidates found"]
-    for row in candidates[:10]:
-        lines.append(
-            f"- {row['product_name']} / {row['supplier']} / "
-            f"price={row['effective_price_yen']} / profit={row['gross_profit_yen']} / {row['url']}"
-        )
-    body = "\n".join(lines)
-    print(f"::notice::{body}")
-
-    slack_webhook = os.getenv("SLACK_WEBHOOK_URL")
-    discord_webhook = os.getenv("DISCORD_WEBHOOK_URL")
-    try:
-        if slack_webhook:
-            requests.post(slack_webhook, json={"text": body}, timeout=10)
-        if discord_webhook:
-            requests.post(discord_webhook, json={"content": body}, timeout=10)
-    except requests.RequestException as exc:
-        print(f"notification failed: {exc}", file=sys.stderr)
-
-
-def autosize_worksheet(ws: Any) -> None:
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    header_fill = PatternFill("solid", fgColor="1F4E78")
-    header_font = Font(color="FFFFFF", bold=True)
-    for cell in ws[1]:
-        cell.fill = header_fill
-        cell.font = header_font
-    for column in ws.columns:
-        max_len = 0
-        col_letter = get_column_letter(column[0].column)
-        for cell in column:
-            value = "" if cell.value is None else str(cell.value)
-            max_len = max(max_len, min(len(value), 60))
-        ws.column_dimensions[col_letter].width = max(10, max_len + 2)
-
-
-def write_excel(rows: list[dict[str, Any]], summary: dict[str, Any], out_path: Path) -> None:
-    if Workbook is None:
-        print("openpyxl is not installed; Excel output skipped", file=sys.stderr)
-        return
-
-    wb = Workbook()
-    ws_summary = wb.active
-    ws_summary.title = "Summary"
-    ws_summary.append(["metric", "value"])
-    for key, value in summary.items():
-        ws_summary.append([key, value])
-    autosize_worksheet(ws_summary)
-
-    fieldnames = list(rows[0].keys()) if rows else ["message"]
-    ws_results = wb.create_sheet("Results")
-    ws_results.append(fieldnames)
-    for row in rows:
-        ws_results.append([row.get(field) for field in fieldnames])
-    autosize_worksheet(ws_results)
-
-    candidates = [row for row in rows if row.get("is_buy_candidate")]
-    ws_candidates = wb.create_sheet("BuyCandidates")
-    ws_candidates.append(fieldnames)
-    for row in candidates:
-        ws_candidates.append([row.get(field) for field in fieldnames])
-    if not candidates:
-        ws_candidates.append(["NO_BUY_CANDIDATE"] + [None] * (len(fieldnames) - 1))
-    autosize_worksheet(ws_candidates)
-
-    discovery_rows = [row for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"]
-    ws_discovery = wb.create_sheet("DiscoveryOnly")
-    ws_discovery.append(fieldnames)
-    for row in discovery_rows:
-        ws_discovery.append([row.get(field) for field in fieldnames])
-    autosize_worksheet(ws_discovery)
-
-    wb.save(out_path)
-
-
 def build_row(product: Product, supplier: Supplier, checked_at: str) -> dict[str, Any]:
     status_code, html, fetch_error = fetch(supplier.url)
-    if fetch_error:
-        parsed = ParseResult(None, None, "", fetch_error)
-    else:
-        parsed = parse_page(html, supplier)
+    parsed = ParseResult(None, None, "", fetch_error) if fetch_error else parse_page(html, supplier)
     eval_result = evaluate(product, supplier, parsed)
     return {
         "checked_at_jst": checked_at,
@@ -436,13 +330,89 @@ def build_row(product: Product, supplier: Supplier, checked_at: str) -> dict[str
     }
 
 
-def main() -> int:
-    products = load_products()
-    suppliers = [s for s in load_suppliers() if s.enabled]
+def notify(candidates: list[dict[str, Any]]) -> None:
+    if not candidates:
+        return
+    lines = ["Enoking monitor: buy candidates found"]
+    for row in candidates[:10]:
+        lines.append(
+            f"- {row['product_name']} / {row['supplier']} / price={row['effective_price_yen']} / "
+            f"profit={row['gross_profit_yen']} / {row['url']}"
+        )
+    body = "\n".join(lines)
+    print(f"::notice::{body}")
+    for env_name, payload_key in [("SLACK_WEBHOOK_URL", "text"), ("DISCORD_WEBHOOK_URL", "content")]:
+        webhook = os.getenv(env_name)
+        if webhook:
+            try:
+                requests.post(webhook, json={payload_key: body}, timeout=10)
+            except requests.RequestException as exc:
+                print(f"notification failed: {exc}", file=sys.stderr)
+
+
+def autosize_worksheet(ws: Any) -> None:
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(color="FFFFFF", bold=True)
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    for column in ws.columns:
+        col_letter = get_column_letter(column[0].column)
+        max_len = max(len(str(cell.value or "")) for cell in column)
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 70)
+
+
+def write_excel(rows: list[dict[str, Any]], summary: dict[str, Any], out_path: Path) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append(["metric", "value"])
+    for key, value in summary.items():
+        ws.append([key, value])
+    autosize_worksheet(ws)
+
+    fieldnames = list(rows[0].keys()) if rows else ["message"]
+    result_sheets = {
+        "Results": rows,
+        "BuyCandidates": [row for row in rows if row.get("is_buy_candidate")],
+        "DiscoveryOnly": [row for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"],
+    }
+    for sheet_name, sheet_rows in result_sheets.items():
+        ws2 = wb.create_sheet(sheet_name)
+        ws2.append(fieldnames)
+        if sheet_rows:
+            for row in sheet_rows:
+                ws2.append([row.get(field) for field in fieldnames])
+        elif sheet_name == "BuyCandidates":
+            ws2.append(["NO_BUY_CANDIDATE"] + [None] * (len(fieldnames) - 1))
+        autosize_worksheet(ws2)
+    wb.save(out_path)
+
+
+def write_outputs(rows: list[dict[str, Any]], summary: dict[str, Any], stamp: str) -> tuple[Path, Path]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_csv = OUTPUT_DIR / f"monitor_result_{stamp}.csv"
+    out_xlsx = OUTPUT_DIR / f"monitor_result_{stamp}.xlsx"
+    fieldnames = list(rows[0].keys()) if rows else ["message"]
+    with out_csv.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        if rows:
+            writer.writerows(rows)
+        else:
+            writer.writerow({"message": "NO_ROWS"})
+    write_excel(rows, summary, out_xlsx)
+    return out_csv, out_xlsx
+
+
+def main() -> int:
     now = datetime.now(JST)
     checked_at = now.strftime("%Y-%m-%d %H:%M:%S %Z")
     stamp = now.strftime("%Y%m%d_%H%M%S")
+    products = load_products()
+    suppliers = [supplier for supplier in load_suppliers() if supplier.enabled]
     rows: list[dict[str, Any]] = []
 
     for idx, supplier in enumerate(suppliers):
@@ -454,29 +424,17 @@ def main() -> int:
             time.sleep(REQUEST_INTERVAL_SEC)
         rows.append(build_row(product, supplier, checked_at))
 
-    out_csv = OUTPUT_DIR / f"monitor_result_{stamp}.csv"
-    out_xlsx = OUTPUT_DIR / f"monitor_result_{stamp}.xlsx"
-    fieldnames = list(rows[0].keys()) if rows else ["message"]
-    with out_csv.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        if rows:
-            writer.writerows(rows)
-        else:
-            writer.writerow({"message": "NO_ROWS"})
-
-    candidates = [row for row in rows if row["is_buy_candidate"]]
-    summary = {
+    candidates = [row for row in rows if row.get("is_buy_candidate")]
+    summary: dict[str, Any] = {
         "checked_at_jst": checked_at,
-        "output_csv": str(out_csv),
-        "output_xlsx": str(out_xlsx),
         "checked": len(rows),
         "buy_candidates": len(candidates),
-        "discovery_only": sum(
-            1 for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"
-        ),
+        "discovery_only": sum(1 for row in rows if row.get("decision_reason") == "DISCOVERY_ONLY_NO_BUY_DECISION"),
         "fetch_errors": sum(1 for row in rows if not row.get("fetch_ok")),
     }
+    out_csv, out_xlsx = write_outputs(rows, summary, stamp)
+    summary["output_csv"] = str(out_csv)
+    summary["output_xlsx"] = str(out_xlsx)
     write_excel(rows, summary, out_xlsx)
     notify(candidates)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
