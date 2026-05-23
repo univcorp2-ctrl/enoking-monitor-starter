@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "src/**"
+      - "tests/**"
       - "config/**"
       - ".github/workflows/daily-monitor.yml"
       - "requirements*.txt"
@@ -19,8 +20,8 @@ permissions:
 
 env:
   BUY_MARGIN_THRESHOLD_YEN: "2000"
-  REQUEST_INTERVAL_SEC: "2.0"
-  REQUEST_TIMEOUT_SEC: "20"
+  REQUEST_INTERVAL_SEC: "1.0"
+  REQUEST_TIMEOUT_SEC: "15"
 
 jobs:
   monitor:
@@ -40,14 +41,12 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
 
       - name: Run production monitor
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
-          YAHOO_CLIENT_ID: ${{ secrets.YAHOO_CLIENT_ID }}
         run: python src/monitor.py
 
       - name: Upload monitor artifacts
