@@ -13,6 +13,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -35,7 +36,7 @@ REQUEST_TIMEOUT_SEC = int(os.getenv("REQUEST_TIMEOUT_SEC", "15"))
 REQUEST_INTERVAL_SEC = float(os.getenv("REQUEST_INTERVAL_SEC", "1.0"))
 USER_AGENT = os.getenv(
     "MONITOR_USER_AGENT",
-    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.4; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)",
+    "Mozilla/5.0 (compatible; EnokingMonitorStarter/1.5; +https://github.com/univcorp2-ctrl/enoking-monitor-starter)",
 )
 
 NEGATIVE_STOCK_SIGNALS = [
@@ -397,6 +398,10 @@ def write_outputs(rows: list[dict[str, Any]], summary: dict[str, Any], stamp: st
         else:
             writer.writerow({"message": "NO_ROWS"})
     write_excel(rows, summary, out_xlsx)
+    latest_csv = OUTPUT_DIR / "latest.csv"
+    latest_xlsx = OUTPUT_DIR / "latest.xlsx"
+    shutil.copyfile(out_csv, latest_csv)
+    shutil.copyfile(out_xlsx, latest_xlsx)
     return out_csv, out_xlsx
 
 
@@ -428,7 +433,10 @@ def main() -> int:
     out_csv, out_xlsx = write_outputs(rows, summary, stamp)
     summary["output_csv"] = str(out_csv)
     summary["output_xlsx"] = str(out_xlsx)
+    summary["latest_csv"] = str(OUTPUT_DIR / "latest.csv")
+    summary["latest_xlsx"] = str(OUTPUT_DIR / "latest.xlsx")
     write_excel(rows, summary, out_xlsx)
+    shutil.copyfile(out_xlsx, OUTPUT_DIR / "latest.xlsx")
     notify(candidates)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
