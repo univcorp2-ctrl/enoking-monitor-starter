@@ -194,15 +194,8 @@ def parse_yahoo(text: str) -> ParseResult:
 
 
 def parse_nojima(text: str) -> ParseResult:
-    match = re.search(
-        r"価格[:：].{0,180}?(?:参考価格[:：].{0,80}?)?([0-9]{1,3}(?:,[0-9]{3})+)円\s*\(税込\)",
-        text,
-        re.DOTALL,
-    )
-    price = yen_to_int(match.group(1)) if match else None
-    if price is None:
-        prices = extract_prices(text)
-        price = min(prices) if prices else None
+    prices = extract_prices(text)
+    price = min(prices) if prices else None
     return ParseResult(price, detect_stock(text), stock_signal_summary(text), "")
 
 
