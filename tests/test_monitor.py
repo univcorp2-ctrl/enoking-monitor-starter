@@ -1,5 +1,4 @@
-from src.monitor import Supplier, evaluate, parse_page
-from src.monitor import Product
+from src.monitor import Product, Supplier, evaluate, parse_page
 
 
 def make_supplier(parser_hint: str, expected_price_yen=None) -> Supplier:
