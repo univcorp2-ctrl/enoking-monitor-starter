@@ -1,0 +1,68 @@
+name: Restock watch (frequent)
+
+# 在庫切れ→在庫ありの遷移(入荷)を高頻度で監視し、検知時のみ通知する軽量ワークフロー。
+# restock_watch=true の仕入れ先だけを対象にするため、全量監視(daily-monitor)より負荷が軽い。
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 30分ごと (UTC)。GitHubの混雑状況により多少遅延することがある。
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+env:
+  RESTOCK_WATCH_ONLY: "1"
+  BUY_MARGIN_THRESHOLD_YEN: "2000"
+  REQUEST_INTERVAL_SEC: "1.5"
+  REQUEST_TIMEOUT_SEC: "15"
+
+concurrency:
+  group: restock-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 在庫の前回状態(SQLite)を実行間で引き継ぐ。これが無いと入荷遷移を検知できない。
+      - name: Restore resale DB (restock state)
+        uses: actions/cache@v4
+        with:
+          path: output/resale_db.sqlite
+          key: resale-db-${{ github.run_id }}
+          restore-keys: |
+            resale-db-
+
+      - name: Run restock watch
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python src/monitor.py
+
+      - name: Upload latest snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restock-watch-${{ github.run_number }}
+          path: |
+            output/latest.csv
+            output/latest.xlsx
+          retention-days: 7
+          if-no-files-found: warn
