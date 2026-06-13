@@ -1,3 +1,6 @@
-jan,product_name,enoking_buy_price_yen,required_condition
-4902370552683,Nintendo Switch 2 多言語版 BEE-S-KB6AA,76500,new
-4902370548501,Nintendo Switch 有機ELモデル ネオン,45300,new
+jan,product_name,enoking_buy_price_yen,required_condition,buyback_source
+4902370552683,Nintendo Switch 2 多言語版 BEE-S-KB6AA,76500,new,エノキング
+4902370548501,Nintendo Switch 有機ELモデル ネオン,45300,new,エノキング
+4902370553031,Nintendo Switch 2 マリオカートワールドセット BEE-S-KB6PA,57500,new,エノキング(57500)/ルデヤ(57100)
+4948872016940,PlayStation5 Slim ダブルパック CFIJ-10018,99500,new,ルデヤ(99500)/カウモバイル(97000)
+4902370553505,Nintendo Switch 2 ポケモンLEGENDS Z-Aセット,55500,new,エノキング(55500)/ルデヤ(55100)

@@ -28,10 +28,31 @@
 
 ## 対象商品
 
-| JAN | 商品 | エノキング買取 | 主な監視先 |
+| JAN | 商品 | 最高買取(売り先) | 主な仕入れ先 |
 |---:|---|---:|---|
-| 4902370552683 | Nintendo Switch 2 多言語版 BEE-S-KB6AA | 76,500円 | My Nintendo Store / Yahoo!ショッピング / 楽天 |
-| 4902370548501 | Nintendo Switch 有機ELモデル ネオン | 45,300円 | ヨドバシ / ノジマ / TSUTAYA / Yahoo! / イオン |
+| 4902370552683 | Nintendo Switch 2 多言語版 BEE-S-KB6AA | 76,500円(エノキング) | My Nintendo Store / Yahoo! / 楽天 |
+| 4902370548501 | Nintendo Switch 有機ELモデル ネオン | 45,300円(エノキング) | ヨドバシ / ノジマ / TSUTAYA / イオン |
+| 4902370553031 | Switch 2 マリオカートワールドセット BEE-S-KB6PA | 57,500円(エノキング)/57,100円(ルデヤ) | **コストコ 52,780円** / マイニンテンドー |
+| 4948872016940 | PlayStation5 Slim ダブルパック CFIJ-10018 | 99,500円(ルデヤ)/97,000円(カウモバイル) | **ソニーストア 89,980円**(粗利+9,520円) / 価格.com |
+| 4902370553505 | Switch 2 ポケモン LEGENDS Z-Aセット | 55,500円(エノキング)/55,100円(ルデヤ) | マイニンテンドー / 楽天 / Yahoo! |
+
+> 買取価格は売り先を横断した最高値。商品ごとの内訳は `config/products_sample.csv` の `buyback_source` 列を参照。
+
+## 入荷監視（在庫切れ→在庫ありの検知）
+
+利益の出る本命商品（コストコのマリカセット、ソニーストアのPS5ダブルパック）は**在庫切れ/入荷待ちが常態**で、ボトルネックは「割安な仕入れ先の再入荷を取れるか」です。そこで在庫の遷移を検知して通知します。
+
+- `config/supplier_urls.csv` の `restock_watch` を `true` にした仕入れ先が監視対象。
+- ある仕入れ先が「在庫切れ(0)」から「在庫あり」に変わった瞬間にだけ `🔔 入荷検知` を通知（初回観測では鳴らさない＝launchノイズ防止）。
+- 前回在庫状態は SQLite (`output/resale_db.sqlite`) に保存。ローカルのループ実行ではそのまま永続化され、GitHub Actions では `actions/cache` で実行間に引き継ぎます。
+- `RESTOCK_WATCH_ONLY=1` を設定すると `restock_watch=true` の仕入れ先だけを高頻度チェック（軽量）。
+
+```bash
+# 入荷監視のみを回す（軽量・高頻度向け）
+RESTOCK_WATCH_ONLY=1 python src/monitor.py
+```
+
+GitHub Actions では `.github/workflows/restock-watch.yml` が30分ごとに入荷監視を実行します。
 
 ## 買い候補条件
 
