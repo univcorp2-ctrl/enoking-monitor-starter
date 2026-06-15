@@ -1,6 +1,7 @@
-jan,product_name,enoking_buy_price_yen,required_condition,buyback_source
-4902370552683,Nintendo Switch 2 多言語版 BEE-S-KB6AA,76500,new,エノキング
-4902370548501,Nintendo Switch 有機ELモデル ネオン,45300,new,エノキング
-4902370553031,Nintendo Switch 2 マリオカートワールドセット BEE-S-KB6PA,57500,new,エノキング(57500)/ルデヤ(57100)
-4948872016940,PlayStation5 Slim ダブルパック CFIJ-10018,99500,new,ルデヤ(99500)/カウモバイル(97000)
-4902370553505,Nintendo Switch 2 ポケモンLEGENDS Z-Aセット,55500,new,エノキング(55500)/ルデヤ(55100)
+jan,product_name,enoking_buy_price_yen,required_condition,buyback_source,buyback_url
+4902370552683,Nintendo Switch 2 多言語版 BEE-S-KB6AA,77400,new,買取ルデヤ,https://kaitori-rudeya.com/product/item/5797
+4902370548501,Nintendo Switch 有機ELモデル ネオン,48300,new,買取ルデヤ,https://kaitori-rudeya.com/product/item/1088
+4902370553031,Nintendo Switch 2 マリオカートワールドセット BEE-S-KB6PA,57100,new,買取wiki,https://gamekaitori.jp/purchase/Nintendo-Switch-2----BEE-S-KB6PA-4902370553031
+4948872016940,PlayStation5 Slim ダブルパック CFIJ-10018,100000,new,買取wiki,https://gamekaitori.jp/purchase/PS5-Slim-5---CFIJ-10018-4948872016940-
+4902370553505,Nintendo Switch 2 ポケモンLEGENDS Z-Aセット,55100,new,買取ルデヤ,https://kaitori-rudeya.com/product/item/6139
+4902370553024,Nintendo Switch 2 本体単体 BEE-S-KB6CA,46500,new,買取wiki,https://gamekaitori.jp/purchase/Nintendo-Switch-2--BEE-S-KB6CA-4902370553024

@@ -88,6 +88,7 @@ class Product:
     enoking_buy_price_yen: int
     required_condition: str
     buyback_source: str = ""
+    buyback_url: str = ""
 
 
 @dataclass
@@ -138,6 +139,7 @@ def load_products(path: Path = CONFIG_DIR / "products_sample.csv") -> dict[str, 
                 enoking_buy_price_yen=int(row.get("enoking_buy_price_yen") or 0),
                 required_condition=row.get("required_condition", "new").strip(),
                 buyback_source=row.get("buyback_source", "").strip(),
+                buyback_url=row.get("buyback_url", "").strip(),
             )
             products[product.jan] = product
     return products
@@ -359,6 +361,7 @@ def build_row(product: Product, supplier: Supplier, checked_at: str) -> dict[str
         "effective_price_yen": eval_result["effective_price_yen"],
         "enoking_buy_price_yen": product.enoking_buy_price_yen,
         "buyback_source": product.buyback_source,
+        "buyback_url": product.buyback_url,
         "gross_profit_yen": eval_result["gross_profit_yen"],
         "in_stock": parsed.in_stock,
         "restock_watch": supplier.restock_watch,

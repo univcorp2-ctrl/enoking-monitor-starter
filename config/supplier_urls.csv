@@ -40,3 +40,6 @@ jan,supplier,url,expected_price_yen,shipping_included,condition_required,enabled
 4902370553505,My Nintendo Store Switch2,https://store-jp.nintendo.com/switch2/,53980,true,new,true,nintendo_store,公式。ポケモンZ-Aセット。抽選/待機列ありブラウザ化候補,false
 4902370553505,Rakuten Search Discovery,https://search.rakuten.co.jp/search/mall/4902370553505/,,true,new,true,search_discovery,発見用。価格抽出は買い判定に使わない,false
 4902370553505,Yahoo Shopping Search Discovery,https://shopping.yahoo.co.jp/search?p=4902370553505,,true,new,true,search_discovery,発見用。価格抽出は買い判定に使わない,false
+4902370553024,Kakaku Lowest,https://kakaku.com/item/K0001671358/,59980,true,new,true,generic,本体単体の最安監視。定価59980円(5/25値上げ後)。買取48000を下回ったら買い候補,false
+4902370553024,My Nintendo Store BEE-S-KB6CA,https://store-jp.nintendo.com/item/hardware-accessory/VM_BEE_S_KB6CA/,59980,true,new,true,nintendo_store,公式単体。待機列ありブラウザ化候補,false
+4902370553024,Amazon dp,https://www.amazon.co.jp/dp/B0DX1BC3R8,,true,new,true,search_discovery,発見用。価格はJS描画のため手動確認,false
