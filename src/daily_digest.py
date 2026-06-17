@@ -1,10 +1,16 @@
-"""Daily Telegram digest for the Enoking resale monitor.
+"""Daily Telegram digest for the expanded arbitrage monitor.
 
-Unlike monitor.notify() (which only fires when a buy candidate exists), this
-ALWAYS sends one Telegram message per run so the user gets a report every day,
-even on days with zero buy candidates. It reuses monitor.py for fetching,
-parsing and margin evaluation, then formats an HTML digest with hyperlinks for
-both the 仕入れ先 (supplier) and 売り先 (buyback) and the explicit 価格差.
+ALWAYS sends one Telegram message per run (even with zero buy candidates) so the
+user gets a report every single day. It uses the arbitrage engine (arb_engine)
+which:
+
+  - fetches each 仕入れ先 (buy source) and parses price/stock,
+  - DOUBLE-CHECKS the product identity via JAN/型番/名称 before trusting a row,
+  - picks the best 売り先 (買取持込 or フリマ) per product by net proceeds,
+  - computes the 実質 gap including ポイント還元 and フリマ手数料/送料.
+
+The message shows, for every item, BOTH direct hyperlinks (仕入れ先 → 売り先)
+and the price gap at a glance, with a verification badge (✅/🟡/⚠️).
 
 Run:  python src/daily_digest.py            (sends to Telegram)
       python src/daily_digest.py --dry-run  (prints, no send)
@@ -13,7 +19,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,13 +28,13 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-import monitor  # noqa: E402  (local module, path injected above)
+import arb_engine  # noqa: E402
+import monitor  # noqa: E402
 
-TOP_N = int(os.getenv("DIGEST_TOP_N", "8"))
+TOP_N = int(os.getenv("DIGEST_TOP_N", "12"))
 
 
 def load_env(env_path: Path = ROOT / ".env") -> None:
-    """Load KEY=VALUE pairs from .env into os.environ (no extra dependency)."""
     if not env_path.exists():
         return
     for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -41,11 +46,11 @@ def load_env(env_path: Path = ROOT / ".env") -> None:
 
 
 def escape_html(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def link(label: str, url: str) -> str:
-    if not url or not url.startswith(("http://", "https://")):
+    if not url or not str(url).startswith(("http://", "https://")):
         return escape_html(label)
     return f'<a href="{escape_html(url)}">{escape_html(label)}</a>'
 
@@ -54,79 +59,76 @@ def yen(value: Any) -> str:
     return f"{value:,}円" if isinstance(value, int) else "—"
 
 
-def gross_text(value: Any) -> str:
+def gap_text(value: Any) -> str:
     if not isinstance(value, int):
         return "価格差 —"
-    mark = "✅" if value >= monitor.BUY_MARGIN_THRESHOLD_YEN else ("➖" if value >= 0 else "❌")
+    mark = "✅" if value > 0 else "❌"
     sign = "+" if value >= 0 else "−"
     return f"{mark} 価格差 {sign}{abs(value):,}円"
 
 
-def collect_rows() -> list[dict[str, Any]]:
-    now = datetime.now(monitor.JST)
-    checked_at = now.strftime("%Y-%m-%d %H:%M:%S %Z")
-    products = monitor.load_products()
-    suppliers = [s for s in monitor.load_suppliers() if s.enabled]
-    rows: list[dict[str, Any]] = []
-    for idx, supplier in enumerate(suppliers):
-        product = products.get(supplier.jan)
-        if not product:
-            continue
-        if idx > 0 and monitor.REQUEST_INTERVAL_SEC > 0:
-            time.sleep(monitor.REQUEST_INTERVAL_SEC)
-        rows.append(monitor.build_row(product, supplier, checked_at))
-    return rows
+def buy_label(row: dict[str, Any]) -> str:
+    """仕入れ先表示。ポイント還元があれば実質価格を併記。"""
+    price = row.get("list_price_yen")
+    eff = row.get("effective_cost_yen")
+    pv = row.get("point_value_yen") or 0
+    base = f"{link(row['buy_shop'], row['buy_url'])} {yen(price)}"
+    if isinstance(eff, int) and isinstance(price, int) and pv > 0:
+        base += f"（実質{eff:,}円/P{pv:,}）"
+    return base
 
 
-def best_row_per_product(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One row per JAN: the highest 価格差 (gross profit) with a usable price."""
-    best: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if row.get("effective_price_yen") is None or row.get("gross_profit_yen") is None:
-            continue
-        current = best.get(row["jan"])
-        if current is None or row["gross_profit_yen"] > current["gross_profit_yen"]:
-            best[row["jan"]] = row
-    return sorted(best.values(), key=lambda r: r["gross_profit_yen"], reverse=True)
+def sell_label(row: dict[str, Any]) -> str:
+    ch = row.get("sell_channel_label") or "売"
+    shop = row.get("sell_shop") or "—"
+    net = row.get("sell_net_yen")
+    price = row.get("sell_price_yen")
+    base = f"{ch} {link(shop, row.get('sell_url', ''))} {yen(net)}"
+    if isinstance(net, int) and isinstance(price, int) and net != price:
+        base += f"（表示{price:,}/手数料引後）"
+    return base
+
+
+def stock_text(row: dict[str, Any]) -> str:
+    v = row.get("in_stock")
+    return "在庫あり" if v is True else ("在庫なし" if v is False else "在庫不明")
 
 
 def build_digest(rows: list[dict[str, Any]]) -> str:
     now = datetime.now(monitor.JST)
-    candidates = [r for r in rows if r.get("is_buy_candidate")]
-    restocks = monitor.detect_restocks(rows)
-    ranked = best_row_per_product(rows)
+    candidates = sorted(
+        [r for r in rows if r.get("is_buy_candidate")],
+        key=lambda r: r.get("gap_yen") or 0,
+        reverse=True,
+    )
+    ranked = arb_engine.best_row_per_product(rows)
 
-    parts: list[str] = [f"📊 <b>転売デイリーダイジェスト</b>  {now.strftime('%Y-%m-%d (%a) %H:%M JST')}"]
+    parts: list[str] = [
+        f"📊 <b>転売デイリーダイジェスト</b>  {now.strftime('%Y-%m-%d (%a) %H:%M JST')}"
+    ]
 
-    # --- Buy candidates (margin >= threshold, in stock, new, shipping incl.) ---
+    # --- Buy candidates: verified, in stock, any positive gap (incl. points) ---
     if candidates:
-        parts.append(f"🛒 <b>買い候補 {len(candidates)}件</b>（粗利≥{monitor.BUY_MARGIN_THRESHOLD_YEN:,}円）")
+        parts.append(f"🛒 <b>買い候補 {len(candidates)}件</b>（実質差額プラス・JAN照合済）")
         for r in candidates[:TOP_N]:
             parts.append(
-                f"📦 {escape_html(r['product_name'])}\n"
-                f"  🏪 仕入: {link(r['supplier'], r['url'])}  💴 {yen(r['effective_price_yen'])}\n"
-                f"  💰 売り先: {link(r.get('buyback_source') or 'エノキング', r.get('buyback_url', ''))} {yen(r['enoking_buy_price_yen'])}\n"
-                f"  {gross_text(r['gross_profit_yen'])}"
+                f"{r.get('verify_badge', '')} <b>{escape_html(r['product_name'])}</b>\n"
+                f"  🏪 仕入: {buy_label(r)}\n"
+                f"  💰 {sell_label(r)}\n"
+                f"  {gap_text(r.get('gap_yen'))}｜{stock_text(r)}"
             )
     else:
-        parts.append("🛒 <b>本日の買い候補なし</b>（粗利が基準未満）。下に現在の価格差ランキングを掲載👇")
+        parts.append("🛒 <b>本日の買い候補なし</b>（実質差額プラスが無し）。下に価格差ランキング👇")
 
-    # --- Restock alerts ---
-    if restocks:
-        parts.append(f"🔔 <b>入荷検知 {len(restocks)}件</b>（在庫切れ→在庫あり）")
-        for r in restocks[:TOP_N]:
-            parts.append(f"📦 {escape_html(r['product_name'])} — 🏪 {link(r['supplier'], r['url'])}")
-
-    # --- Price-gap ranking (always shown, includes negatives) ---
+    # --- Price-gap ranking (all items, incl. negatives, for visibility) ---
     if ranked:
-        parts.append("📈 <b>価格差ランキング（売り先買取 − 最安仕入れ）</b>")
+        parts.append("📈 <b>価格差ランキング（最高値売り先 − 実質仕入れ）</b>")
         for r in ranked[:TOP_N]:
-            stock = "在庫あり" if r.get("in_stock") is True else ("在庫なし" if r.get("in_stock") is False else "在庫不明")
             parts.append(
-                f"・{escape_html(r['product_name'])}\n"
-                f"  {gross_text(r['gross_profit_yen'])}｜{stock}\n"
-                f"  🏪 仕入 {link(r['supplier'], r['url'])} {yen(r['effective_price_yen'])}"
-                f" → 💰 売 {link(r.get('buyback_source') or 'エノキング', r.get('buyback_url', ''))} {yen(r['enoking_buy_price_yen'])}"
+                f"{r.get('verify_badge', '')} {escape_html(r['product_name'])}\n"
+                f"  {gap_text(r.get('gap_yen'))}｜{stock_text(r)}\n"
+                f"  🏪 {buy_label(r)}\n"
+                f"  → 💰 {sell_label(r)}"
             )
 
     # --- Footer ---
@@ -134,9 +136,12 @@ def build_digest(rows: list[dict[str, Any]]) -> str:
         1 for r in rows
         if not r.get("fetch_ok") and r.get("parser_hint", "") not in monitor.DISCOVERY_HINTS
     )
+    unverified = sum(1 for r in rows if not r.get("verified"))
     parts.append(
-        f"———\n🔎 チェック {len(rows)}件 / 取得エラー {fetch_errors}件\n"
-        f"※買取価格は設定値・要当日確認。仕入れ価格はJS描画/待機列で取得不可の場合あり"
+        "———\n"
+        f"🔎 チェック {len(rows)}件 / 取得エラー {fetch_errors}件 / 未照合 {unverified}件\n"
+        "✅JAN一致 🟡型番/名称一致 ⚠️未照合（買い候補は照合済のみ）\n"
+        "※買取価格は設定値・要当日確認。ポイント還元・フリマ手数料は概算"
     )
     return "\n\n".join(parts)
 
@@ -170,7 +175,7 @@ def send_telegram(html: str) -> bool:
 def main() -> int:
     load_env()
     dry_run = "--dry-run" in sys.argv
-    rows = collect_rows()
+    rows = arb_engine.collect_rows()
     digest = build_digest(rows)
     if dry_run:
         print(digest)

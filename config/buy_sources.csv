@@ -1,0 +1,14 @@
+jan,shop,url,list_price_yen,point_rate,shipping_yen,parser_hint,condition,enabled,notes
+4902370552683,My Nintendo Store,https://store-jp.nintendo.com/item/hardware-accessory/VM_BEE_S_KB6AA/,69980,0,0,nintendo_store,new,true,公式。JS/待機列ありrequestsのみでは取得不可の場合あり
+4902370552683,Yahoo digitalisland,https://store.shopping.yahoo.co.jp/digitalisland/4902370552683.html,95980,0.05,0,yahoo,new,true,PayPay還元想定5%。高値監視
+4902370552683,Rakuten uriurishop,https://item.rakuten.co.jp/uriurishop/4902370552683/,93596,0.05,0,generic,new,true,楽天ポイント想定5%。高値監視
+4902370548501,Yodobashi,https://www.yodobashi.com/product/100000001006501447/,37980,0.10,0,yodobashi,new,true,ヨドバシ10%ポイント。実質34182円相当
+4902370548501,Nojima Online,https://online.nojima.co.jp/commodity/1/4902370548501/,37980,0,0,nojima,new,true,購入条件あり/完売御礼の変化を監視
+4902370548501,AEON Style Online,https://aeonretail.com/product/0/P-4902370548501/,37928,0,0,aeon,new,true,お一人さま1点限り
+4902370553031,Costco Online,https://www.costco.co.jp/TV-Electronics/Video-Games/Game-Consoles/Nintendo-Switch2-Japan-Only/p/74093,52780,0,0,stock_only,new,true,本命仕入れ。価格は会員ログインで隠れるためconfig値
+4902370553031,My Nintendo Store Switch2,https://store-jp.nintendo.com/switch2/,53980,0,0,nintendo_store,new,true,公式定価。抽選/待機列あり
+4948872016940,Sony Store CFIJ-10018,https://pur.store.sony.jp/ps5/products/2025_shinseikatsu/CFIJ-10018_product/,89980,0,0,stock_only,new,true,本命仕入れ。入荷待ち→入荷を監視
+4948872016940,Kakaku Lowest,https://kakaku.com/item/K0001577654/,110717,0,0,generic,new,true,最安監視(価格比較サイト・ポイント無し)
+4902370553505,My Nintendo Store Switch2,https://store-jp.nintendo.com/switch2/,53980,0,0,nintendo_store,new,true,公式。ポケモンZ-Aセット
+4902370553024,Kakaku Lowest,https://kakaku.com/item/K0001671358/,59980,0,0,generic,new,true,本体単体の最安監視(価格比較サイト)
+4902370553024,My Nintendo Store BEE-S-KB6CA,https://store-jp.nintendo.com/item/hardware-accessory/VM_BEE_S_KB6CA/,59980,0,0,nintendo_store,new,true,公式単体。待機列あり

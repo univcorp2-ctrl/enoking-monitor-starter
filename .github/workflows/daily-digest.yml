@@ -13,10 +13,10 @@ permissions:
   contents: read
 
 env:
-  BUY_MARGIN_THRESHOLD_YEN: "2000"
+  # 新エンジンは「実質差額プラスなら候補」(gap>0)。BUY_MARGIN_THRESHOLD_YEN は monitor.py 用に残置。
   REQUEST_INTERVAL_SEC: "1.0"
   REQUEST_TIMEOUT_SEC: "15"
-  DIGEST_TOP_N: "8"
+  DIGEST_TOP_N: "15"
 
 concurrency:
   group: daily-digest
