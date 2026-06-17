@@ -1,8 +1,21 @@
-jan,channel,shop,sell_price_yen,url,fee_rate,shipping_yen,condition,notes
-4902370552683,kaitori,買取ルデヤ,77400,https://kaitori-rudeya.com/product/item/5797,0,0,new,2026-06-15検証
-4902370548501,kaitori,買取ルデヤ,48300,https://kaitori-rudeya.com/product/item/1088,0,0,new,2026-06-15検証
-4902370553031,kaitori,買取wiki,57100,https://gamekaitori.jp/purchase/Nintendo-Switch-2----BEE-S-KB6PA-4902370553031,0,0,new,2026-06-15検証
-4902370553031,kaitori,買取エノキング,57500,https://newenoking-kaitori.com/,0,0,new,会員制サロン価格・要相談
-4948872016940,kaitori,買取wiki,100000,https://gamekaitori.jp/purchase/PS5-Slim-5---CFIJ-10018-4948872016940-,0,0,new,2026-06-15検証
-4902370553505,kaitori,買取ルデヤ,55100,https://kaitori-rudeya.com/product/item/6139,0,0,new,2026-06-15検証
-4902370553024,kaitori,買取wiki,46500,https://gamekaitori.jp/purchase/Nintendo-Switch-2--BEE-S-KB6CA-4902370553024,0,0,new,2026-06-15検証
+jan,channel,shop,sell_price_yen,url,fee_rate,shipping_yen,condition,enabled,manual_only,notes
+4902370552683,kaitori,買取ルデヤ,77400,https://kaitori-rudeya.com/product/item/5797,0,0,new,true,false,2026-06-15検証
+4902370548501,kaitori,買取ルデヤ,48300,https://kaitori-rudeya.com/product/item/1088,0,0,new,true,false,2026-06-15検証
+4902370553031,kaitori,買取wiki,57100,https://gamekaitori.jp/purchase/Nintendo-Switch-2----BEE-S-KB6PA-4902370553031,0,0,new,true,false,2026-06-15検証
+4902370553031,kaitori,買取エノキング,57500,https://newenoking-kaitori.com/,0,0,new,true,true,会員制サロン価格・要相談・トップページのため自動採用しない
+4948872016940,kaitori,買取wiki,100000,https://gamekaitori.jp/purchase/PS5-Slim-5---CFIJ-10018-4948872016940-,0,0,new,true,false,2026-06-15検証
+4902370553505,kaitori,買取ルデヤ,55100,https://kaitori-rudeya.com/product/item/6139,0,0,new,true,false,2026-06-15検証
+4902370553024,kaitori,買取wiki,46500,https://gamekaitori.jp/purchase/Nintendo-Switch-2--BEE-S-KB6CA-4902370553024,0,0,new,true,false,2026-06-15検証
+4582769982897,kaitori,買取ルデヤ,16500,https://kaitori-rudeya.com/product/item/6971,0,0,new,true,false,2026-06-17調査。OP-16決戦の刻
+4582769982897,frima,メルカリ,15000,https://www.mercari.com/jp/search/?keyword=ONE%20PIECE%20OP-16%20BOX%20決戦の刻,0.10,210,new,true,false,新品実勢中心値・手数料10%
+4521329462127,kaitori,買取ルデヤ,12000,https://kaitori-rudeya.com/product/item/6949,0,0,new,true,false,2026-06-17調査。アビスアイ
+4521329462127,frima,メルカリ,12000,https://www.mercari.com/jp/search/?keyword=ポケカ%20アビスアイ%20BOX,0.10,210,new,true,false,新品実勢・下落傾向
+4521329432786,kaitori,買取ルデヤ,10500,https://kaitori-rudeya.com/product/item/6723,0,0,new,true,false,2026-06-17調査。ニンジャスピナー
+4521329432786,frima,メルカリ,12000,https://www.mercari.com/jp/search/?keyword=ポケカ%20ニンジャスピナー%20BOX,0.10,210,new,true,false,新品実勢中心値
+4547410529975,kaitori,買取ルデヤ,23000,https://kaitori-rudeya.com/product/item/4727,0,0,new,true,false,2026-06-17調査。instax WIDE 400
+4549576161617,kaitori,買取ルデヤ,88600,https://kaitori-rudeya.com/product/item/550,0,0,new,true,false,2026-06-17調査。Xbox Series X
+4549576161617,frima,メルカリ,90000,https://www.mercari.com/jp/search/?keyword=Xbox%20Series%20X%20新品,0.10,700,new,true,false,新品実勢中心値
+0814585022254,kaitori,買取wiki,118800,https://gamekaitori.jp/purchase/Steam-Deck-OLED---EL-512GB-814585022254,0,0,new,true,false,2026-06-17調査。Steam Deck OLED 512GB
+0814585022254,kaitori,買取ルデヤ,118700,https://kaitori-rudeya.com/product/item/3917,0,0,new,true,false,2026-06-17調査
+4549995635232,kaitori,買取ルデヤ,31000,https://kaitori-rudeya.com/product/item/6201,0,0,new,true,false,2026-06-17調査。AirPods Pro 3
+4548736143470,kaitori,買取ルデヤ,23500,https://kaitori-rudeya.com/product/item/3664,0,0,new,true,false,2026-06-17調査。WF-1000XM5

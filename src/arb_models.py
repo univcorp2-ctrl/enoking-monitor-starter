@@ -39,14 +39,24 @@ def _to_int(value: str | None) -> int | None:
         return None
 
 
-def _to_float(value: str | None, default: float = 0.0) -> float:
-    text = str(value or "").strip().replace("%", "")
+def parse_rate(value: str | None, default: float = 0.0) -> float:
+    """Parse a fee/point rate robustly into a 0..1 fraction.
+
+    Accepts '0.10', '10%', or a bare '10' (treated as percent). Anything > 1 is
+    assumed to be a percent typo and divided by 100, so '10' and '10%' and '0.10'
+    all yield 0.10. This prevents catastrophic mis-pricing from natural input.
+    """
+    text = str(value or "").strip()
     if not text:
         return default
+    has_pct = "%" in text
     try:
-        return float(text)
+        num = float(text.replace("%", ""))
     except ValueError:
         return default
+    if has_pct or num > 1:
+        return num / 100.0
+    return num
 
 
 def _to_bool(value: str | None, default: bool = True) -> bool:
@@ -81,6 +91,8 @@ class SellDest:
     fee_rate: float = 0.0      # フリマ手数料 (e.g. 0.10 for メルカリ)
     shipping_yen: int = 0      # こちら負担の発送料 (フリマ時)
     condition: str = "new"
+    enabled: bool = True
+    manual_only: bool = False  # 確定価格でない（要相談/トップページ等）。候補根拠から除外
     notes: str = ""
 
     @property
@@ -160,9 +172,11 @@ def load_sell_destinations(
                 shop=(row.get("shop") or "").strip(),
                 price_yen=price,
                 url=(row.get("url") or "").strip(),
-                fee_rate=_to_float(row.get("fee_rate")),
+                fee_rate=parse_rate(row.get("fee_rate")),
                 shipping_yen=_to_int(row.get("shipping_yen")) or 0,
                 condition=(row.get("condition") or "new").strip(),
+                enabled=_to_bool(row.get("enabled"), True),
+                manual_only=_to_bool(row.get("manual_only"), False),
                 notes=(row.get("notes") or "").strip(),
             )
             dests.setdefault(jan, []).append(dest)
@@ -185,7 +199,7 @@ def load_buy_sources(path: Path = CONFIG_DIR / "buy_sources.csv") -> list[BuySou
                     shop=(row.get("shop") or "").strip(),
                     url=url,
                     list_price_yen=_to_int(row.get("list_price_yen")),
-                    point_rate=_to_float(row.get("point_rate")),
+                    point_rate=parse_rate(row.get("point_rate")),
                     shipping_yen=_to_int(row.get("shipping_yen")) or 0,
                     parser_hint=(row.get("parser_hint") or "generic").strip(),
                     condition=(row.get("condition") or "new").strip(),
@@ -197,10 +211,22 @@ def load_buy_sources(path: Path = CONFIG_DIR / "buy_sources.csv") -> list[BuySou
 
 
 def best_sell_destination(
-    jan: str, dests: dict[str, list[SellDest]]
+    jan: str,
+    dests: dict[str, list[SellDest]],
+    required_condition: str = "new",
 ) -> SellDest | None:
-    """Highest net-proceeds sell destination for a JAN (買取/フリマ横断)."""
-    options = dests.get(jan) or []
+    """Highest net-proceeds sell destination for a JAN (買取/フリマ横断).
+
+    Only confirmed, enabled destinations matching the required condition are
+    eligible: ``manual_only`` (e.g. 要相談/トップページ) and disabled rows, and
+    condition mismatches (中古/開封済み価格) are excluded so the gap is not
+    inflated by a price that does not actually apply to a new unit.
+    """
+    options = [
+        d
+        for d in (dests.get(jan) or [])
+        if d.enabled and not d.manual_only and d.condition == required_condition
+    ]
     if not options:
         return None
     return max(options, key=lambda d: d.net_yen)

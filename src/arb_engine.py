@@ -36,9 +36,22 @@ from jan_verify import VerifyResult, verify  # noqa: E402
 
 DISCOVERY_HINTS = monitor.DISCOVERY_HINTS
 
+# A parsed price that deviates from the configured expected price by more than
+# this fraction is treated as a misparse (e.g. a "10,000円以上送料無料" banner
+# read as the item price) and the configured value is used instead.
+PRICE_SANITY_DEV = float(monitor.os.getenv("PRICE_SANITY_DEV", "0.40"))
 
-def _price_from(parsed_price: int | None, source: BuySource) -> int | None:
-    return parsed_price if parsed_price is not None else source.list_price_yen
+
+def choose_price(parsed_price: int | None, source: BuySource) -> tuple[int | None, str]:
+    """Pick the trustworthy price and report when a parse was rejected."""
+    expected = source.list_price_yen
+    if parsed_price is None:
+        return expected, ""
+    if expected and expected > 0:
+        deviation = abs(parsed_price - expected) / expected
+        if deviation > PRICE_SANITY_DEV:
+            return expected, f"PRICE_PARSE_SUSPECT(parsed={parsed_price},used_config={expected})"
+    return parsed_price, ""
 
 
 def evaluate_source(
@@ -47,11 +60,12 @@ def evaluate_source(
     sell: SellDest | None,
     html: str,
     parsed: monitor.ParseResult,
+    fetch_ok: bool = True,
 ) -> dict[str, Any]:
     is_discovery = source.parser_hint.lower() in DISCOVERY_HINTS
     vr: VerifyResult = verify(product, html, require=not is_discovery)
 
-    price = _price_from(parsed.parsed_price_yen, source)
+    price, price_note = choose_price(parsed.parsed_price_yen, source)
     eff_cost = source.effective_cost(price)
     sell_net = sell.net_yen if sell else None
     gap = (sell_net - eff_cost) if (sell_net is not None and eff_cost is not None) else None
@@ -61,6 +75,10 @@ def evaluate_source(
 
     if is_discovery:
         reason = "DISCOVERY_ONLY"
+        is_candidate = False
+    elif not fetch_ok:
+        # HTTP error / non-2xx / fetch failure: never trust as a candidate.
+        reason = "FETCH_ERROR"
         is_candidate = False
     elif not vr.verified:
         reason = "UNVERIFIED_MATCH"
@@ -111,8 +129,14 @@ def evaluate_source(
         "is_buy_candidate": is_candidate,
         "decision_reason": reason,
         "raw_signals": parsed.raw_signals,
-        "notes": "; ".join(p for p in [source.notes, parsed.notes] if p),
+        "notes": "; ".join(p for p in [source.notes, parsed.notes, price_note] if p),
     }
+
+
+def _status_ok(status: int | None) -> bool:
+    # monitor.fetch() returns the body regardless of status code; treat any
+    # non-2xx (403/404/5xx, waiting-room pages) as a failed fetch.
+    return status is not None and 200 <= status < 300
 
 
 def build_row(product: Product, source: BuySource, sell: SellDest | None) -> dict[str, Any]:
@@ -120,14 +144,23 @@ def build_row(product: Product, source: BuySource, sell: SellDest | None) -> dic
     timeout = 10 if is_discovery else monitor.REQUEST_TIMEOUT_SEC
     retries = 0 if is_discovery else monitor.MAX_FETCH_RETRIES
     status, html, fetch_error = monitor.fetch(source.url, timeout=timeout, retries=retries)
-    if fetch_error:
-        parsed = monitor.ParseResult(None, None, "", fetch_error)
-        html = ""
+
+    fetch_ok = not fetch_error and _status_ok(status)
+    if not fetch_ok:
+        note = fetch_error or f"HTTP_{status}"
+        parsed = monitor.ParseResult(None, None, "", note)
+        html = ""  # do not parse/verify an error body
     else:
-        parsed = monitor.parse_page(html, _as_supplier(source))
-    row = evaluate_source(product, source, sell, html, parsed)
+        try:
+            parsed = monitor.parse_page(html, _as_supplier(source))
+        except Exception as exc:  # one bad page must not kill the daily digest
+            parsed = monitor.ParseResult(None, None, "", f"PARSE_ERROR: {exc.__class__.__name__}")
+            html = ""
+            fetch_ok = False
+
+    row = evaluate_source(product, source, sell, html, parsed, fetch_ok=fetch_ok)
     row["http_status"] = status
-    row["fetch_ok"] = not bool(fetch_error)
+    row["fetch_ok"] = fetch_ok
     return row
 
 
@@ -159,7 +192,7 @@ def collect_rows() -> list[dict[str, Any]]:
             continue
         if idx > 0 and monitor.REQUEST_INTERVAL_SEC > 0:
             time.sleep(monitor.REQUEST_INTERVAL_SEC)
-        sell = best_sell_destination(source.jan, sell_dests)
+        sell = best_sell_destination(source.jan, sell_dests, product.required_condition)
         row = build_row(product, source, sell)
         row["checked_at_jst"] = now.strftime("%Y-%m-%d %H:%M:%S %Z")
         rows.append(row)

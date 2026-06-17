@@ -17,6 +17,7 @@ Run:  python src/daily_digest.py            (sends to Telegram)
 """
 from __future__ import annotations
 
+import html as html_lib
 import os
 import sys
 from datetime import datetime
@@ -46,7 +47,7 @@ def load_env(env_path: Path = ROOT / ".env") -> None:
 
 
 def escape_html(text: str) -> str:
-    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return html_lib.escape(str(text), quote=True)
 
 
 def link(label: str, url: str) -> str:

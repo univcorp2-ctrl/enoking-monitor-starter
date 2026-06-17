@@ -12,3 +12,11 @@ jan,shop,url,list_price_yen,point_rate,shipping_yen,parser_hint,condition,enable
 4902370553505,My Nintendo Store Switch2,https://store-jp.nintendo.com/switch2/,53980,0,0,nintendo_store,new,true,公式。ポケモンZ-Aセット
 4902370553024,Kakaku Lowest,https://kakaku.com/item/K0001671358/,59980,0,0,generic,new,true,本体単体の最安監視(価格比較サイト)
 4902370553024,My Nintendo Store BEE-S-KB6CA,https://store-jp.nintendo.com/item/hardware-accessory/VM_BEE_S_KB6CA/,59980,0,0,nintendo_store,new,true,公式単体。待機列あり
+4582769982897,Kakaku Lowest,https://kakaku.com/item/S0001042760/,5280,0,0,generic,new,true,OP-16決戦の刻。定価仕入れ。買取16500で粗利大
+4521329462127,Rakuten yum-yum,https://item.rakuten.co.jp/yum-yum/4521329462127/,6000,0.05,0,generic,new,true,アビスアイBOX。シュリンク付き。楽天P想定5%
+4521329432786,Kakaku Lowest,https://kakaku.com/item/S0001040765/,5400,0,0,generic,new,true,ニンジャスピナーBOX。定価仕入れ
+4547410529975,Fujiya Camera,https://www.fujiya-camera.co.jp/shop/g/gC4547410529975/,23100,0,0,generic,new,true,instax WIDE 400 GREEN。買取とほぼ同額。安値仕入れで黒字
+4549576161617,Kakaku Lowest,https://kakaku.com/item/K0001219037/,90000,0,0,generic,new,true,Xbox Series X RRT-00015。買取88600。フリマ安値仕入れ狙い
+0814585022254,Kakaku Lowest,https://kakaku.com/item/K0001583992/,133800,0,0,generic,new,true,Steam Deck OLED 512GB。正規仕入れは赤字。フリマ仕入れ監視
+4549995635232,Kakaku Lowest,https://kakaku.com/item/K0001709588/,33210,0,0,generic,new,true,AirPods Pro 3。買取31000。ポイント/セールで実質黒字化
+4548736143470,Kakaku Lowest,https://kakaku.com/item/J0000041936/,25885,0,0,generic,new,true,WF-1000XM5。買取23500。フリマ高値売り抜け余地
