@@ -12,6 +12,10 @@ env:
   ENOKING_MAX_CRAWL_PAGES: "80"
   RESPECT_ROBOTS: "true"
 
+concurrency:
+  group: restock-watch-manual
+  cancel-in-progress: true
+
 jobs:
   watch:
     runs-on: ubuntu-latest
