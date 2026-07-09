@@ -11,17 +11,19 @@ on:
       - "config/**"
       - ".github/workflows/daily-monitor.yml"
       - "requirements*.txt"
+      - "pyproject.toml"
   schedule:
-    # 09:30 JST every day
+    # 09:30 JST every day. Kept for backward compatibility; main public site is enoking-cloud-site.yml.
     - cron: "30 0 * * *"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  BUY_MARGIN_THRESHOLD_YEN: "2000"
   REQUEST_INTERVAL_SEC: "1.0"
-  REQUEST_TIMEOUT_SEC: "15"
+  REQUEST_TIMEOUT_SEC: "25"
+  ENOKING_MAX_CRAWL_PAGES: "220"
+  RESPECT_ROBOTS: "true"
 
 jobs:
   monitor:
@@ -29,39 +31,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
+          python-version: "3.12"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
-
       - name: Run tests
-        run: python -m pytest -q
-
-      - name: Run production monitor
+        run: pytest -q
+      - name: Run production monitor compatibility pipeline
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
         run: python src/monitor.py
-
-      - name: Persist latest outputs to repository
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f output/*.csv output/*.xlsx
-          if git diff --cached --quiet; then
-            echo "No monitor output changes to commit."
-          else
-            git commit -m "Update latest monitor output [skip ci]"
-            git push
-          fi
-
       - name: Upload monitor artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,6 +52,7 @@ jobs:
           name: monitor-results-${{ github.run_number }}
           path: |
             output/*.csv
+            output/*.json
             output/*.xlsx
           retention-days: 30
           if-no-files-found: warn
