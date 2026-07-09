@@ -30,7 +30,7 @@ env:
 
 concurrency:
   group: enoking-cloud-site
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   scrape-and-deploy:
