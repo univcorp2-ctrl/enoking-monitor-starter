@@ -1,26 +1,19 @@
 name: Daily Telegram digest
 
-# 毎日必ず1通、Telegramに転売ダイジェストを配信する（買い候補ゼロの日も価格差ランキングを送る）。
-# PCの電源状態に依存しないクラウド実行。
-
 on:
   workflow_dispatch:
   schedule:
-    # 09:00 JST every day (00:00 UTC)
+    # 09:00 JST every day. Uses the same safe cloud pipeline and prints summary.
     - cron: "0 0 * * *"
 
 permissions:
   contents: read
 
 env:
-  # 新エンジンは「実質差額プラスなら候補」(gap>0)。BUY_MARGIN_THRESHOLD_YEN は monitor.py 用に残置。
   REQUEST_INTERVAL_SEC: "1.0"
-  REQUEST_TIMEOUT_SEC: "15"
-  DIGEST_TOP_N: "15"
-
-concurrency:
-  group: daily-digest
-  cancel-in-progress: false
+  REQUEST_TIMEOUT_SEC: "25"
+  ENOKING_MAX_CRAWL_PAGES: "220"
+  RESPECT_ROBOTS: "true"
 
 jobs:
   digest:
@@ -28,19 +21,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
+          python-version: "3.12"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Send daily digest to Telegram
+      - name: Run cloud pipeline summary
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python src/daily_digest.py
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+        run: python -m src.run_cloud_pipeline
+      - name: Upload digest artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-digest-${{ github.run_number }}
+          path: |
+            output/*.csv
+            output/*.json
+            output/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn
