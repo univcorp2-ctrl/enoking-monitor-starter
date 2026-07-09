@@ -2,18 +2,8 @@ name: Daily supplier monitor
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "config/**"
-      - ".github/workflows/daily-monitor.yml"
-      - "requirements*.txt"
-      - "pyproject.toml"
   schedule:
-    # 09:30 JST every day. Kept for backward compatibility; main public site is enoking-cloud-site.yml.
+    # 09:30 JST every day. Main public site deployment is handled by enoking-cloud-site.yml.
     - cron: "30 0 * * *"
 
 permissions:
@@ -24,6 +14,10 @@ env:
   REQUEST_TIMEOUT_SEC: "25"
   ENOKING_MAX_CRAWL_PAGES: "220"
   RESPECT_ROBOTS: "true"
+
+concurrency:
+  group: daily-supplier-monitor
+  cancel-in-progress: true
 
 jobs:
   monitor:
@@ -41,7 +35,7 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Run tests
         run: pytest -q
-      - name: Run production monitor compatibility pipeline
+      - name: Run monitor pipeline
         env:
           RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
         run: python src/monitor.py
