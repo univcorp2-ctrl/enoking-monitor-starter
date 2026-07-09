@@ -1,0 +1,77 @@
+name: Enoking cloud scrape and Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - ".github/workflows/enoking-cloud-site.yml"
+  schedule:
+    # 07:10 JST every day. Runs fully in the cloud.
+    - cron: "10 22 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  REQUEST_TIMEOUT_SEC: "25"
+  REQUEST_INTERVAL_SEC: "1.0"
+  SUPPLIER_REQUEST_INTERVAL_SEC: "1.0"
+  ENOKING_MAX_CRAWL_PAGES: "220"
+  RESPECT_ROBOTS: "true"
+
+concurrency:
+  group: enoking-cloud-site
+  cancel-in-progress: false
+
+jobs:
+  scrape-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run tests
+        run: pytest -q
+      - name: Scrape Enoking and build static dashboard
+        env:
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+        run: python -m src.run_cloud_pipeline
+      - name: Upload CSV JSON XLSX outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enoking-cloud-outputs-${{ github.run_number }}
+          path: |
+            output/*.csv
+            output/*.json
+            output/*.xlsx
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
