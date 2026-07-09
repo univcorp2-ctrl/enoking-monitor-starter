@@ -1,1 +1,1 @@
-"""Source package for enoking monitor."""
+"""Enoking cloud scraping and sourcing dashboard package."""
