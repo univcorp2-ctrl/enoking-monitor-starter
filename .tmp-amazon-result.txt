@@ -1,3 +1,0 @@
-FINAL_URL=https://www.amazon.co.jp/dp/B09T3B4SYX?ref=cm_sw_r_cso_cp_apin_dp_C0G1JGBJW9B12QFKAWSW&ref_=cm_sw_r_cso_cp_apin_dp_C0G1JGBJW9B12QFKAWSW&social_share=cm_sw_r_cso_cp_apin_dp_C0G1JGBJW9B12QFKAWSW
-ASIN=B09T3B4SYX
-TITLE=Amazon | MSI MAG FORGE 110R PCケース ATX ミドルタワー 黒 初心者向け ARGBファン1基付き 割れにくいアクリルパネル CS8337 | MSI | PCケース 通販
